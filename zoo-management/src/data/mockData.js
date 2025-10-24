@@ -1405,77 +1405,77 @@ export const memberships = [
   },
 ];
 
-// Purchases
+// Purchases (ordered chronologically: #1 = oldest, #9 = newest)
 export const purchases = [
   {
     Purchase_ID: 1,
     Total_Amount: 149.99,
     Payment_Method: "Card",
-    Purchase_Date: "2025-01-01 10:00:00",
+    Purchase_Date: "2025-01-01 10:00:00", // Oldest - membership purchase
     Customer_ID: 1,
     Membership_ID: 1,
   },
   {
     Purchase_ID: 2,
-    Total_Amount: 89.95,
+    Total_Amount: 156.8,
     Payment_Method: "Card",
-    Purchase_Date: "2025-09-15 14:30:00",
+    Purchase_Date: "2025-08-20 14:00:00", // 65 days ago (within year)
     Customer_ID: 1,
     Membership_ID: null,
   },
   {
     Purchase_ID: 3,
-    Total_Amount: 54.97,
-    Payment_Method: "Cash",
-    Purchase_Date: "2025-08-22 11:00:00",
+    Total_Amount: 45.2,
+    Payment_Method: "Card",
+    Purchase_Date: "2025-09-25 12:15:00", // 29 days ago (within month)
     Customer_ID: 1,
     Membership_ID: null,
   },
   {
     Purchase_ID: 4,
-    Total_Amount: 124.5,
+    Total_Amount: 98.75,
     Payment_Method: "Card",
-    Purchase_Date: "2025-07-10 16:45:00",
+    Purchase_Date: "2025-10-05 15:00:00", // 19 days ago (within month)
     Customer_ID: 1,
     Membership_ID: null,
   },
   {
     Purchase_ID: 5,
-    Total_Amount: 34.99,
-    Payment_Method: "Card",
-    Purchase_Date: "2025-06-05 13:20:00",
+    Total_Amount: 67.45,
+    Payment_Method: "Cash",
+    Purchase_Date: "2025-10-10 10:30:00", // 14 days ago (within month)
     Customer_ID: 1,
     Membership_ID: null,
   },
   {
     Purchase_ID: 6,
-    Total_Amount: 67.45,
-    Payment_Method: "Cash",
-    Purchase_Date: "2025-05-18 10:30:00",
+    Total_Amount: 34.99,
+    Payment_Method: "Card",
+    Purchase_Date: "2025-10-20 13:20:00", // 4 days ago (within week)
     Customer_ID: 1,
     Membership_ID: null,
   },
   {
     Purchase_ID: 7,
-    Total_Amount: 98.75,
+    Total_Amount: 124.5,
     Payment_Method: "Card",
-    Purchase_Date: "2025-04-12 15:00:00",
+    Purchase_Date: "2025-10-22 16:45:00", // 2 days ago (within week)
     Customer_ID: 1,
     Membership_ID: null,
   },
   {
     Purchase_ID: 8,
-    Total_Amount: 45.2,
-    Payment_Method: "Card",
-    Purchase_Date: "2025-03-25 12:15:00",
+    Total_Amount: 109.95,
+    Payment_Method: "Cash",
+    Purchase_Date: "2025-10-24 08:00:00", // Today (early morning)
     Customer_ID: 1,
     Membership_ID: null,
   },
   {
     Purchase_ID: 9,
-    Total_Amount: 156.8,
+    Total_Amount: 107.94,
     Payment_Method: "Card",
-    Purchase_Date: "2025-02-14 14:00:00",
+    Purchase_Date: "2025-10-24 09:30:00", // Today (most recent)
     Customer_ID: 1,
     Membership_ID: null,
   },
@@ -1487,62 +1487,75 @@ export const tickets = [
     Ticket_ID: 1,
     Ticket_Type: "Adult",
     Price: 29.99,
-    Purchase_ID: 2,
-    Quantity: 2,
-  },
-  {
-    Ticket_ID: 2,
-    Ticket_Type: "Child",
-    Price: 14.99,
-    Purchase_ID: 2,
-    Quantity: 2,
-  },
-  {
-    Ticket_ID: 3,
-    Ticket_Type: "Senior",
-    Price: 24.99,
-    Purchase_ID: 3,
+    Purchase_ID: 1,
     Quantity: 1,
   },
   {
+    Ticket_ID: 2,
+    Ticket_Type: "Senior",
+    Price: 24.99,
+    Purchase_ID: 1,
+    Quantity: 1,
+  },
+  {
+    Ticket_ID: 3,
+    Ticket_Type: "Adult",
+    Price: 29.99,
+    Purchase_ID: 9,
+    Quantity: 2,
+  },
+  {
     Ticket_ID: 4,
-    Ticket_Type: "Student",
-    Price: 19.99,
-    Purchase_ID: 3,
+    Ticket_Type: "Child",
+    Price: 14.99,
+    Purchase_ID: 9,
     Quantity: 2,
   },
   {
     Ticket_ID: 5,
-    Ticket_Type: "Adult",
-    Price: 29.99,
-    Purchase_ID: 1,
+    Ticket_Type: "Senior",
+    Price: 24.99,
+    Purchase_ID: 8,
     Quantity: 1,
   },
   {
     Ticket_ID: 6,
-    Ticket_Type: "Senior",
-    Price: 24.99,
-    Purchase_ID: 1,
-    Quantity: 1,
+    Ticket_Type: "Student",
+    Price: 19.99,
+    Purchase_ID: 8,
+    Quantity: 2,
   },
 ];
 
 // Purchase Items (junction table linking purchases to gift shop items)
 export const purchaseItems = [
-  { Purchase_ID: 4, Item_ID: 1, Quantity: 2, Unit_Price: 24.99 }, // 2x Plush Elephant
-  { Purchase_ID: 4, Item_ID: 2, Quantity: 3, Unit_Price: 19.99 }, // 3x Zoo T-Shirt
-  { Purchase_ID: 4, Item_ID: 4, Quantity: 1, Unit_Price: 14.99 }, // 1x Water Bottle
-  { Purchase_ID: 5, Item_ID: 5, Quantity: 2, Unit_Price: 16.99 }, // 2x Safari Hat
-  { Purchase_ID: 6, Item_ID: 3, Quantity: 1, Unit_Price: 29.99 }, // 1x Animal Encyclopedia
-  { Purchase_ID: 6, Item_ID: 6, Quantity: 1, Unit_Price: 22.99 }, // 1x Plush Tiger
-  { Purchase_ID: 6, Item_ID: 4, Quantity: 1, Unit_Price: 14.99 }, // 1x Water Bottle
-  { Purchase_ID: 7, Item_ID: 7, Quantity: 2, Unit_Price: 34.99 }, // 2x Binoculars
-  { Purchase_ID: 7, Item_ID: 2, Quantity: 1, Unit_Price: 19.99 }, // 1x Zoo T-Shirt
-  { Purchase_ID: 8, Item_ID: 1, Quantity: 1, Unit_Price: 24.99 }, // 1x Plush Elephant
-  { Purchase_ID: 8, Item_ID: 5, Quantity: 1, Unit_Price: 16.99 }, // 1x Safari Hat
-  { Purchase_ID: 9, Item_ID: 3, Quantity: 2, Unit_Price: 29.99 }, // 2x Animal Encyclopedia
-  { Purchase_ID: 9, Item_ID: 1, Quantity: 2, Unit_Price: 24.99 }, // 2x Plush Elephant
-  { Purchase_ID: 9, Item_ID: 6, Quantity: 1, Unit_Price: 22.99 }, // 1x Plush Tiger
+  { Purchase_ID: 1, Item_ID: 9000, Quantity: 1, Unit_Price: 149.99 }, // Purchase #1: Membership purchase
+  { Purchase_ID: 2, Item_ID: 3, Quantity: 2, Unit_Price: 29.99 }, // Purchase #2: 2x Animal Encyclopedia
+  { Purchase_ID: 2, Item_ID: 1, Quantity: 2, Unit_Price: 24.99 }, // Purchase #2: 2x Plush Elephant
+  { Purchase_ID: 2, Item_ID: 6, Quantity: 1, Unit_Price: 22.99 }, // Purchase #2: 1x Plush Tiger
+  { Purchase_ID: 3, Item_ID: 1, Quantity: 1, Unit_Price: 24.99 }, // Purchase #3: 1x Plush Elephant
+  { Purchase_ID: 3, Item_ID: 5, Quantity: 1, Unit_Price: 16.99 }, // Purchase #3: 1x Safari Hat
+  { Purchase_ID: 4, Item_ID: 7, Quantity: 2, Unit_Price: 34.99 }, // Purchase #4: 2x Binoculars
+  { Purchase_ID: 4, Item_ID: 2, Quantity: 1, Unit_Price: 19.99 }, // Purchase #4: 1x Zoo T-Shirt
+  { Purchase_ID: 5, Item_ID: 3, Quantity: 1, Unit_Price: 29.99 }, // Purchase #5: 1x Animal Encyclopedia
+  { Purchase_ID: 5, Item_ID: 6, Quantity: 1, Unit_Price: 22.99 }, // Purchase #5: 1x Plush Tiger
+  { Purchase_ID: 5, Item_ID: 4, Quantity: 1, Unit_Price: 14.99 }, // Purchase #5: 1x Water Bottle
+  { Purchase_ID: 6, Item_ID: 5, Quantity: 2, Unit_Price: 16.99 }, // Purchase #6: 2x Safari Hat
+  { Purchase_ID: 7, Item_ID: 1, Quantity: 2, Unit_Price: 24.99 }, // Purchase #7: 2x Plush Elephant
+  { Purchase_ID: 7, Item_ID: 2, Quantity: 3, Unit_Price: 19.99 }, // Purchase #7: 3x Zoo T-Shirt
+  { Purchase_ID: 7, Item_ID: 4, Quantity: 1, Unit_Price: 14.99 }, // Purchase #7: 1x Water Bottle
+  { Purchase_ID: 8, Item_ID: 1, Quantity: 1, Unit_Price: 24.99 }, // Purchase #8: 1x Plush Elephant
+  { Purchase_ID: 8, Item_ID: 2, Quantity: 1, Unit_Price: 19.99 }, // Purchase #8: 1x Zoo T-Shirt
+];
+
+// Purchase Concession Items (junction table linking purchases to concession items)
+export const purchaseConcessionItems = [
+  { Purchase_ID: 3, Concession_Item_ID: 6, Quantity: 3, Unit_Price: 5.99 }, // Purchase #3: 3x Vanilla Ice Cream Cone
+  { Purchase_ID: 3, Concession_Item_ID: 9, Quantity: 2, Unit_Price: 4.99 }, // Purchase #3: 2x Frozen Lemonade
+  { Purchase_ID: 6, Concession_Item_ID: 1, Quantity: 2, Unit_Price: 12.99 }, // Purchase #6: 2x Classic Cheeseburger
+  { Purchase_ID: 6, Concession_Item_ID: 4, Quantity: 1, Unit_Price: 4.99 }, // Purchase #6: 1x French Fries
+  { Purchase_ID: 9, Concession_Item_ID: 1, Quantity: 1, Unit_Price: 12.99 }, // Purchase #9: 1x Classic Cheeseburger
+  { Purchase_ID: 9, Concession_Item_ID: 4, Quantity: 1, Unit_Price: 4.99 }, // Purchase #9: 1x French Fries
 ];
 
 // Helper function to get employee job title
@@ -1565,8 +1578,12 @@ export const getCustomerMembership = (customerId) => {
 };
 
 // Helper function to get customer-specific purchase number (incremental per customer)
-export const getCustomerPurchaseNumber = (customerId, purchaseId) => {
-  const customerPurchases = purchases
+export const getCustomerPurchaseNumber = (
+  customerId,
+  purchaseId,
+  purchasesArray = purchases
+) => {
+  const customerPurchases = purchasesArray
     .filter((p) => p.Customer_ID === customerId)
     .sort(
       (a, b) =>

@@ -6,16 +6,8 @@ import {
 } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
-import {
-  purchases,
-  tickets,
-  purchaseItems,
-  items,
-  getCustomerMembership,
-  memberships,
-  getCustomerPurchaseNumber,
-} from "../data/mockData";
 import { Download, Receipt } from "lucide-react";
+import { useData } from "../data/DataContext";
 
 // Helper function to format numbers with commas
 const formatNumber = (num) => {
@@ -26,6 +18,16 @@ const formatNumber = (num) => {
 };
 
 export function OrderHistoryPage({ user }) {
+  const {
+    purchases,
+    tickets,
+    purchaseItems,
+    purchaseConcessionItems,
+    memberships,
+    items,
+    concessionItems,
+  } = useData();
+
   const customerPurchases = purchases
     .filter((p) => p.Customer_ID === user.Customer_ID)
     .sort(
@@ -33,10 +35,25 @@ export function OrderHistoryPage({ user }) {
         new Date(b.Purchase_Date).getTime() -
         new Date(a.Purchase_Date).getTime()
     );
-
   const customerTickets = tickets.filter((t) =>
     customerPurchases.some((p) => p.Purchase_ID === t.Purchase_ID)
   );
+
+  // Helper function to get customer-specific purchase number
+  // Sorted chronologically (oldest = #1, newest = highest number)
+  const getCustomerPurchaseNumber = (purchaseId) => {
+    const sortedPurchases = purchases
+      .filter((p) => p.Customer_ID === user.Customer_ID)
+      .sort(
+        (a, b) =>
+          new Date(a.Purchase_Date).getTime() -
+          new Date(b.Purchase_Date).getTime()
+      );
+    const index = sortedPurchases.findIndex(
+      (p) => p.Purchase_ID === purchaseId
+    );
+    return index !== -1 ? index + 1 : sortedPurchases.length + 1;
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -83,7 +100,6 @@ export function OrderHistoryPage({ user }) {
                                 <span className="text-sm text-gray-600">
                                   Order #
                                   {getCustomerPurchaseNumber(
-                                    user.Customer_ID,
                                     purchase.Purchase_ID
                                   )}
                                 </span>
@@ -149,9 +165,47 @@ export function OrderHistoryPage({ user }) {
                                 })
                               );
                             })()}
+                            {(() => {
+                              const purchaseConcessions =
+                                purchaseConcessionItems.filter(
+                                  (pci) =>
+                                    pci.Purchase_ID === purchase.Purchase_ID
+                                );
+                              return (
+                                purchaseConcessions.length > 0 &&
+                                purchaseConcessions.map(
+                                  (purchaseConcession, index) => {
+                                    const item = concessionItems.find(
+                                      (ci) =>
+                                        ci.Concession_Item_ID ===
+                                        purchaseConcession.Concession_Item_ID
+                                    );
+                                    return (
+                                      item && (
+                                        <p
+                                          key={`${purchaseConcession.Concession_Item_ID}-${index}`}
+                                          className="text-sm text-gray-600"
+                                        >
+                                          • {item.Item_Name} (x
+                                          {purchaseConcession.Quantity}) - $
+                                          {(
+                                            purchaseConcession.Unit_Price *
+                                            purchaseConcession.Quantity
+                                          ).toFixed(2)}
+                                        </p>
+                                      )
+                                    );
+                                  }
+                                )
+                              );
+                            })()}
                             {purchaseTickets.length === 0 &&
                               purchaseItems.filter(
                                 (pi) => pi.Purchase_ID === purchase.Purchase_ID
+                              ).length === 0 &&
+                              purchaseConcessionItems.filter(
+                                (pci) =>
+                                  pci.Purchase_ID === purchase.Purchase_ID
                               ).length === 0 && (
                                 <p className="text-sm text-gray-600">
                                   • Purchase completed

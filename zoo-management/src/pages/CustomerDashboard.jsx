@@ -1,12 +1,4 @@
-import {
-  purchases,
-  tickets,
-  memberships,
-  purchaseItems,
-  items,
-  getCustomerMembership,
-  getCustomerPurchaseNumber,
-} from "../data/mockData";
+// Removed type-only imports; mockData exports data arrays (e.g., customers, purchases)
 import {
   ShoppingCart,
   Ticket,
@@ -40,6 +32,8 @@ import {
 import { ScrollArea } from "../components/ui/scroll-area";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
+// Removed type-only imports; use runtime values from context instead
+import { useData } from "../data/DataContext";
 
 // Helper function to format numbers with commas
 const formatNumber = (num) => {
@@ -50,6 +44,15 @@ const formatNumber = (num) => {
 };
 
 export function CustomerDashboard({ user, onNavigate }) {
+  const {
+    purchases,
+    tickets,
+    purchaseItems,
+    purchaseConcessionItems,
+    memberships,
+    items,
+    concessionItems,
+  } = useData();
   const customerPurchases = purchases
     .filter((p) => p.Customer_ID === user.Customer_ID)
     .sort(
@@ -58,7 +61,26 @@ export function CustomerDashboard({ user, onNavigate }) {
         new Date(a.Purchase_Date).getTime()
     );
   const recentPurchases = customerPurchases.slice(0, 3);
-  const membership = getCustomerMembership(user.Customer_ID);
+  const membership =
+    memberships.find(
+      (m) => m.Customer_ID === user.Customer_ID && m.Membership_Status
+    ) || null;
+
+  // Helper function to get customer-specific purchase number
+  // Sorted chronologically (oldest = #1, newest = highest number)
+  const getCustomerPurchaseNumber = (purchaseId) => {
+    const sortedPurchases = purchases
+      .filter((p) => p.Customer_ID === user.Customer_ID)
+      .sort(
+        (a, b) =>
+          new Date(a.Purchase_Date).getTime() -
+          new Date(b.Purchase_Date).getTime()
+      );
+    const index = sortedPurchases.findIndex(
+      (p) => p.Purchase_ID === purchaseId
+    );
+    return index !== -1 ? index + 1 : sortedPurchases.length + 1;
+  };
 
   // Edit Profile State
   const [isEditingProfile, setIsEditingProfile] = useState(false);
@@ -234,36 +256,81 @@ export function CustomerDashboard({ user, onNavigate }) {
                 </div>
                 <h3 className="mb-2">Gift Shop</h3>
                 <p className="text-sm text-gray-600">
-                  Browse our merchandise and souvenirs
+                  Browse and buy gift shop items online
                 </p>
               </CardContent>
             </Card>
 
-            <Card className="hover:shadow-lg transition-shadow">
-              <CardContent className="pt-6 text-center">
-                <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <Crown className="h-8 w-8 text-green-600" />
-                </div>
-                <h3 className="mb-2">Membership</h3>
-                <p className="text-sm text-gray-600 mb-4">
-                  {membership
-                    ? isMembershipExpired
-                      ? "Your membership has expired"
-                      : "You are a valued member"
-                    : "Join to get exclusive perks and discounts"}
-                </p>
-                <Button
-                  onClick={handleRenewMembership}
-                  className="bg-green-600 hover:bg-green-700 w-full cursor-pointer"
-                >
-                  {membership
-                    ? isMembershipExpired
-                      ? "Renew"
-                      : "Extend"
-                    : "Become a Member"}
-                </Button>
-              </CardContent>
-            </Card>
+            <Dialog open={orderHistoryOpen} onOpenChange={setOrderHistoryOpen}>
+              <DialogTrigger asChild>
+                <Card className="hover:shadow-lg transition-shadow cursor-pointer group">
+                  <CardContent className="pt-6 text-center">
+                    <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4 group-hover:bg-green-600 transition-colors">
+                      <Receipt className="h-8 w-8 text-green-600 group-hover:text-white" />
+                    </div>
+                    <h3 className="mb-2">Order History</h3>
+                    <p className="text-sm text-gray-600">
+                      View all past purchases and receipts
+                    </p>
+                  </CardContent>
+                </Card>
+              </DialogTrigger>
+              <DialogContent className="max-w-3xl max-h-[80vh]">
+                <DialogHeader>
+                  <DialogTitle>Order History</DialogTitle>
+                  <DialogDescription>
+                    View all past purchases and receipts
+                  </DialogDescription>
+                </DialogHeader>
+                <ScrollArea className="h-[60vh] pr-4">
+                  <div className="space-y-4">
+                    {customerPurchases.length > 0 ? (
+                      customerPurchases.map((purchase) => (
+                        <div
+                          key={purchase.Purchase_ID}
+                          className="p-4 border rounded-lg hover:bg-gray-50 transition-colors cursor-pointer"
+                          onClick={() => {
+                            setOrderHistoryOpen(false);
+                            setSelectedPurchase(purchase);
+                          }}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex-1">
+                              <div className="flex items-center space-x-3 mb-2">
+                                <Badge variant="secondary">
+                                  {purchase.Payment_Method}
+                                </Badge>
+                                <span className="text-sm text-gray-600">
+                                  {new Date(
+                                    purchase.Purchase_Date
+                                  ).toLocaleDateString()}
+                                </span>
+                              </div>
+                              <p className="text-sm text-gray-700">
+                                Order #
+                                {getCustomerPurchaseNumber(
+                                  purchase.Purchase_ID
+                                )}
+                              </p>
+                            </div>
+                            <div className="text-right ml-6">
+                              <p className="text-2xl text-green-600 font-semibold">
+                                ${purchase.Total_Amount.toFixed(2)}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="text-center py-12">
+                        <ShoppingCart className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+                        <p className="text-gray-600">No purchase history</p>
+                      </div>
+                    )}
+                  </div>
+                </ScrollArea>
+              </DialogContent>
+            </Dialog>
           </div>
         </div>
       </section>
@@ -271,339 +338,317 @@ export function CustomerDashboard({ user, onNavigate }) {
       {/* Recent Purchases */}
       <section className="py-12 bg-white">
         <div className="container mx-auto px-6">
-          <div className="flex justify-between items-center mb-6">
-            <h2 className="text-2xl">Recent Orders</h2>
-            <Dialog open={orderHistoryOpen} onOpenChange={setOrderHistoryOpen}>
-              <DialogTrigger asChild>
-                <Button variant="outline" className="cursor-pointer">
-                  View All Orders
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="max-w-4xl max-h-[90vh]">
-                <DialogHeader>
-                  <DialogTitle>Order History</DialogTitle>
-                  <DialogDescription>
-                    View all your past purchases and orders
-                  </DialogDescription>
-                </DialogHeader>
-                <ScrollArea className="max-h-[70vh] pr-4">
+          <h2 className="text-2xl mb-6">Recent Purchases</h2>
+          <div className="max-w-4xl">
+            <Card>
+              <CardContent className="p-6">
+                {recentPurchases.length > 0 ? (
                   <div className="space-y-4">
-                    {customerPurchases.map((purchase) => {
-                      const purchaseTickets = tickets.filter(
-                        (t) => t.Purchase_ID === purchase.Purchase_ID
-                      );
-                      const purchaseGiftItems = purchaseItems.filter(
-                        (pi) => pi.Purchase_ID === purchase.Purchase_ID
-                      );
-
-                      return (
-                        <Card
-                          key={purchase.Purchase_ID}
-                          className="hover:shadow-md transition-shadow cursor-pointer"
-                          onClick={() => {
-                            setSelectedPurchase(purchase);
-                            setOrderHistoryOpen(false);
-                          }}
-                        >
-                          <CardContent className="p-6">
-                            <div className="flex justify-between items-start mb-4">
-                              <div>
-                                <p className="text-sm text-gray-600">
-                                  Order #
-                                  {getCustomerPurchaseNumber(
-                                    user.Customer_ID,
-                                    purchase.Purchase_ID
-                                  )}
-                                </p>
-                                <p className="text-sm text-gray-600">
-                                  {new Date(
-                                    purchase.Purchase_Date
-                                  ).toLocaleDateString()}
-                                </p>
-                              </div>
-                              <div className="text-right">
-                                <p className="text-2xl font-semibold text-green-600">
-                                  ${purchase.Total_Amount.toFixed(2)}
-                                </p>
-                                <Badge variant="secondary" className="mt-1">
-                                  {purchase.Payment_Method}
-                                </Badge>
-                              </div>
-                            </div>
-
-                            {/* Items in this purchase */}
-                            <div className="space-y-2">
-                              {purchaseTickets.length > 0 && (
-                                <div className="text-sm text-gray-700">
-                                  <span className="font-medium">Tickets:</span>{" "}
-                                  {purchaseTickets
-                                    .map(
-                                      (t) => `${t.Quantity}x ${t.Ticket_Type}`
-                                    )
-                                    .join(", ")}
-                                </div>
-                              )}
-                              {purchaseGiftItems.length > 0 && (
-                                <div className="text-sm text-gray-700">
-                                  <span className="font-medium">Items:</span>{" "}
-                                  {purchaseGiftItems
-                                    .map((pi) => {
-                                      const item = items.find(
-                                        (i) => i.Item_ID === pi.Item_ID
-                                      );
-                                      return `${pi.Quantity}x ${item?.Item_Name}`;
-                                    })
-                                    .join(", ")}
-                                </div>
-                              )}
-                            </div>
-                          </CardContent>
-                        </Card>
-                      );
-                    })}
+                    {recentPurchases.map((purchase) => (
+                      <div
+                        key={purchase.Purchase_ID}
+                        className="flex items-center justify-between p-4 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer"
+                        onClick={() => setSelectedPurchase(purchase)}
+                      >
+                        <div className="flex-1">
+                          <div className="flex items-center space-x-3 mb-2">
+                            <Badge variant="secondary">
+                              {purchase.Payment_Method}
+                            </Badge>
+                            <span className="text-sm text-gray-600">
+                              {new Date(
+                                purchase.Purchase_Date
+                              ).toLocaleDateString()}
+                            </span>
+                          </div>
+                          <p className="text-sm text-gray-700">
+                            Order #
+                            {getCustomerPurchaseNumber(purchase.Purchase_ID)}
+                          </p>
+                        </div>
+                        <div className="text-right ml-6">
+                          <p className="text-2xl text-green-600 font-semibold">
+                            ${purchase.Total_Amount.toFixed(2)}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                </ScrollArea>
-              </DialogContent>
-            </Dialog>
+                ) : (
+                  <div className="text-center py-12">
+                    <ShoppingCart className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+                    <p className="text-gray-600">No recent purchases</p>
+                    <Button
+                      className="mt-4 bg-green-600 hover:bg-green-700 cursor-pointer"
+                      onClick={() => onNavigate && onNavigate("shop")}
+                    >
+                      Start Shopping
+                    </Button>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {recentPurchases.map((purchase) => {
-              const purchaseTickets = tickets.filter(
-                (t) => t.Purchase_ID === purchase.Purchase_ID
-              );
-              const purchaseGiftItems = purchaseItems.filter(
-                (pi) => pi.Purchase_ID === purchase.Purchase_ID
-              );
-
-              return (
-                <Card
-                  key={purchase.Purchase_ID}
-                  className="hover:shadow-lg transition-shadow cursor-pointer"
-                  onClick={() => setSelectedPurchase(purchase)}
-                >
-                  <CardContent className="pt-6">
-                    <div className="flex justify-between items-start mb-4">
-                      <div>
-                        <p className="text-sm text-gray-600">
-                          Order #
-                          {getCustomerPurchaseNumber(
-                            user.Customer_ID,
-                            purchase.Purchase_ID
-                          )}
-                        </p>
-                        <p className="text-sm text-gray-600">
-                          {new Date(
-                            purchase.Purchase_Date
-                          ).toLocaleDateString()}
-                        </p>
-                      </div>
-                      <Receipt className="h-5 w-5 text-gray-400" />
-                    </div>
-
-                    <div className="space-y-2 mb-4">
-                      {purchaseTickets.length > 0 && (
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm">Tickets</span>
-                          <Badge variant="secondary">
-                            {purchaseTickets.reduce(
-                              (sum, t) => sum + t.Quantity,
-                              0
-                            )}
-                          </Badge>
-                        </div>
-                      )}
-                      {purchaseGiftItems.length > 0 && (
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm">Gift Items</span>
-                          <Badge variant="secondary">
-                            {purchaseGiftItems.reduce(
-                              (sum, pi) => sum + pi.Quantity,
-                              0
-                            )}
-                          </Badge>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="border-t pt-4">
-                      <div className="flex justify-between items-center">
-                        <span className="font-medium">Total</span>
-                        <span className="text-xl font-semibold text-green-600">
-                          ${purchase.Total_Amount.toFixed(2)}
-                        </span>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
-
-          {recentPurchases.length === 0 && (
-            <div className="text-center py-12 text-gray-500">
-              <ShoppingCart className="h-12 w-12 mx-auto mb-4 opacity-50" />
-              <p>No recent purchases</p>
-            </div>
-          )}
         </div>
       </section>
 
       {/* Account Settings */}
       <section className="py-12">
         <div className="container mx-auto px-6">
-          <h2 className="text-2xl mb-6">Account Settings</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Profile Card */}
+          <h2 className="text-2xl mb-6">My Account</h2>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Profile Information Card */}
             <Card>
               <CardHeader>
                 <CardTitle>Profile Information</CardTitle>
               </CardHeader>
               <CardContent>
-                {!isEditingProfile ? (
-                  <div className="space-y-4">
-                    <div>
-                      <Label className="text-gray-600">Name</Label>
-                      <p className="font-medium">
-                        {user.First_Name} {user.Last_Name}
-                      </p>
+                <div className="space-y-6">
+                  {/* Profile Information */}
+                  {!isEditingProfile ? (
+                    <div className="space-y-4">
+                      <div>
+                        <label className="text-sm font-medium text-gray-700">
+                          Customer ID
+                        </label>
+                        <p className="text-lg">#{user.Customer_ID}</p>
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium text-gray-700">
+                          Name
+                        </label>
+                        <p className="text-lg">
+                          {user.First_Name} {user.Last_Name}
+                        </p>
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium text-gray-700">
+                          Email
+                        </label>
+                        <p className="text-lg">{user.Email}</p>
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium text-gray-700">
+                          Phone
+                        </label>
+                        <p className="text-lg">{user.Phone}</p>
+                      </div>
+                      <div className="pt-4">
+                        <Button
+                          variant="outline"
+                          onClick={() => setIsEditingProfile(true)}
+                          className="cursor-pointer"
+                        >
+                          Edit Profile
+                        </Button>
+                      </div>
                     </div>
-                    <div>
-                      <Label className="text-gray-600">Email</Label>
-                      <p className="font-medium">{user.Email}</p>
+                  ) : (
+                    <div className="space-y-4">
+                      <div>
+                        <Label htmlFor="firstName">First Name</Label>
+                        <Input
+                          id="firstName"
+                          value={profileData.firstName}
+                          onChange={(e) =>
+                            setProfileData({
+                              ...profileData,
+                              firstName: e.target.value,
+                            })
+                          }
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="lastName">Last Name</Label>
+                        <Input
+                          id="lastName"
+                          value={profileData.lastName}
+                          onChange={(e) =>
+                            setProfileData({
+                              ...profileData,
+                              lastName: e.target.value,
+                            })
+                          }
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="email">Email</Label>
+                        <Input
+                          id="email"
+                          type="email"
+                          value={profileData.email}
+                          onChange={(e) =>
+                            setProfileData({
+                              ...profileData,
+                              email: e.target.value,
+                            })
+                          }
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="phone">Phone</Label>
+                        <Input
+                          id="phone"
+                          value={profileData.phone}
+                          onChange={(e) =>
+                            setProfileData({
+                              ...profileData,
+                              phone: e.target.value,
+                            })
+                          }
+                        />
+                      </div>
+                      <div className="flex space-x-2 pt-4">
+                        <Button
+                          onClick={handleSaveProfile}
+                          className="bg-green-600 hover:bg-green-700 cursor-pointer"
+                        >
+                          Save Changes
+                        </Button>
+                        <Button
+                          variant="outline"
+                          onClick={() => {
+                            setIsEditingProfile(false);
+                            setProfileData({
+                              firstName: user.First_Name,
+                              lastName: user.Last_Name,
+                              email: user.Email,
+                              phone: user.Phone,
+                            });
+                          }}
+                          className="cursor-pointer"
+                        >
+                          Cancel
+                        </Button>
+                      </div>
                     </div>
-                    <div>
-                      <Label className="text-gray-600">Phone</Label>
-                      <p className="font-medium">
-                        {user.Phone || "Not provided"}
-                      </p>
-                    </div>
-                    <div>
-                      <Label className="text-gray-600">Customer ID</Label>
-                      <p className="font-medium">#{user.Customer_ID}</p>
-                    </div>
-                    <Button
-                      onClick={() => setIsEditingProfile(true)}
-                      className="bg-green-600 hover:bg-green-700 w-full cursor-pointer"
-                    >
-                      Edit Profile
-                    </Button>
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    <div>
-                      <Label htmlFor="firstName">First Name</Label>
-                      <Input
-                        id="firstName"
-                        value={profileData.firstName}
-                        onChange={(e) =>
-                          setProfileData({
-                            ...profileData,
-                            firstName: e.target.value,
-                          })
-                        }
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="lastName">Last Name</Label>
-                      <Input
-                        id="lastName"
-                        value={profileData.lastName}
-                        onChange={(e) =>
-                          setProfileData({
-                            ...profileData,
-                            lastName: e.target.value,
-                          })
-                        }
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="email">Email</Label>
-                      <Input
-                        id="email"
-                        type="email"
-                        value={profileData.email}
-                        onChange={(e) =>
-                          setProfileData({
-                            ...profileData,
-                            email: e.target.value,
-                          })
-                        }
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="phone">Phone</Label>
-                      <Input
-                        id="phone"
-                        type="tel"
-                        value={profileData.phone}
-                        onChange={(e) =>
-                          setProfileData({
-                            ...profileData,
-                            phone: e.target.value,
-                          })
-                        }
-                      />
-                    </div>
-                    <div className="flex space-x-2">
-                      <Button
-                        onClick={handleSaveProfile}
-                        className="bg-green-600 hover:bg-green-700 cursor-pointer"
-                      >
-                        Save Changes
-                      </Button>
-                      <Button
-                        variant="outline"
-                        onClick={() => {
-                          setIsEditingProfile(false);
-                          setProfileData({
-                            firstName: user.First_Name,
-                            lastName: user.Last_Name,
-                            email: user.Email,
-                            phone: user.Phone,
-                          });
-                        }}
-                        className="cursor-pointer"
-                      >
-                        Cancel
-                      </Button>
-                    </div>
-                  </div>
-                )}
+                  )}
+                </div>
               </CardContent>
             </Card>
 
-            {/* Security Card */}
+            {/* Account Statistics Card */}
             <Card>
               <CardHeader>
-                <CardTitle>Security</CardTitle>
+                <CardTitle>Account Details</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {/* Membership Info */}
+                  {membership ? (
+                    <div className="p-4 bg-gradient-to-r from-purple-50 to-purple-100 rounded-lg border border-purple-200">
+                      <div className="flex items-center justify-between mb-3">
+                        <p className="font-medium text-purple-900">
+                          Active Membership
+                        </p>
+                        <Badge
+                          className={`${
+                            isMembershipExpired ? "bg-red-500" : "bg-green-600"
+                          }`}
+                        >
+                          {membershipStatus}
+                        </Badge>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3 text-sm">
+                        <div>
+                          <p className="text-gray-600">Start Date</p>
+                          <p className="font-medium">
+                            {new Date(
+                              membership.Start_Date
+                            ).toLocaleDateString()}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-gray-600">End Date</p>
+                          <p className="font-medium">
+                            {new Date(membership.End_Date).toLocaleDateString()}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-gray-600">Membership ID</p>
+                          <p className="font-medium">
+                            #{membership.Customer_ID}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-gray-600">Discount Benefits</p>
+                          <p className="font-medium text-green-600">Applied</p>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="p-4 bg-gray-50 rounded-lg border border-gray-200 text-center">
+                      <Crown className="h-12 w-12 text-gray-300 mx-auto mb-2" />
+                      <p className="text-gray-600 mb-3">No Active Membership</p>
+                      <Button
+                        size="sm"
+                        className="bg-green-600 hover:bg-green-700 cursor-pointer"
+                        onClick={() => onNavigate && onNavigate("tickets")}
+                      >
+                        Get Membership
+                      </Button>
+                    </div>
+                  )}
+
+                  {/* Purchase Statistics */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="p-3 bg-green-50 rounded-lg border border-green-200">
+                      <p className="text-sm text-gray-600 mb-1">
+                        Total Purchases
+                      </p>
+                      <p className="text-2xl font-semibold text-green-600">
+                        {customerPurchases.length}
+                      </p>
+                    </div>
+                    <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
+                      <p className="text-sm text-gray-600 mb-1">Total Spent</p>
+                      <p className="text-2xl font-semibold text-blue-600">
+                        $
+                        {formatNumber(
+                          customerPurchases.reduce(
+                            (sum, p) => sum + p.Total_Amount,
+                            0
+                          )
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Password & Security Card */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Password & Security</CardTitle>
               </CardHeader>
               <CardContent>
                 {!isChangingPassword ? (
                   <div className="space-y-4">
-                    <div>
-                      <Label className="text-gray-600">Password</Label>
-                      <div className="flex items-center space-x-2">
-                        <p className="font-medium">
-                          {showPassword ? "password123" : "••••••••"}
-                        </p>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setShowPassword(!showPassword)}
-                          className="cursor-pointer"
-                        >
-                          {showPassword ? (
-                            <EyeOff className="h-4 w-4" />
-                          ) : (
-                            <Eye className="h-4 w-4" />
-                          )}
-                        </Button>
-                      </div>
+                    <div className="flex items-center space-x-2">
+                      <Input
+                        type={showPassword ? "text" : "password"}
+                        value={user.Customer_Password}
+                        disabled
+                        className="max-w-xs"
+                      />
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="cursor-pointer"
+                      >
+                        {showPassword ? (
+                          <EyeOff className="h-4 w-4" />
+                        ) : (
+                          <Eye className="h-4 w-4" />
+                        )}
+                      </Button>
                     </div>
                     <Button
+                      variant="outline"
                       onClick={() => setIsChangingPassword(true)}
-                      className="bg-green-600 hover:bg-green-700 w-full cursor-pointer"
+                      className="cursor-pointer"
                     >
                       Change Password
                     </Button>
@@ -695,10 +740,7 @@ export function CustomerDashboard({ user, onNavigate }) {
             <DialogDescription>
               Order #
               {selectedPurchase &&
-                getCustomerPurchaseNumber(
-                  user.Customer_ID,
-                  selectedPurchase.Purchase_ID
-                )}{" "}
+                getCustomerPurchaseNumber(selectedPurchase.Purchase_ID)}{" "}
               -{" "}
               {selectedPurchase &&
                 new Date(selectedPurchase.Purchase_Date).toLocaleDateString()}
@@ -716,7 +758,6 @@ export function CustomerDashboard({ user, onNavigate }) {
                         <span className="font-medium">
                           #
                           {getCustomerPurchaseNumber(
-                            user.Customer_ID,
                             selectedPurchase.Purchase_ID
                           )}
                         </span>
@@ -791,10 +832,61 @@ export function CustomerDashboard({ user, onNavigate }) {
                   );
                 })()}
 
+                {/* Membership included in this purchase */}
+                {(() => {
+                  const membershipItems = purchaseItems.filter(
+                    (pi) =>
+                      pi.Purchase_ID === selectedPurchase.Purchase_ID &&
+                      pi.Item_ID === 9000
+                  );
+                  return (
+                    membershipItems.length > 0 && (
+                      <div>
+                        <h3 className="font-medium mb-3">Membership</h3>
+                        <div className="space-y-2">
+                          {membershipItems.map((purchaseItem, index) => (
+                            <Card key={`membership-${index}`}>
+                              <CardContent className="p-4">
+                                <div className="flex justify-between items-center">
+                                  <div>
+                                    <p className="font-medium">
+                                      Annual Membership
+                                    </p>
+                                    <p className="text-sm text-gray-600">
+                                      Quantity: {purchaseItem.Quantity}
+                                    </p>
+                                    <p className="text-sm text-gray-600">
+                                      1 Year Unlimited Access
+                                    </p>
+                                  </div>
+                                  <div className="text-right">
+                                    <p className="font-semibold text-green-600">
+                                      $
+                                      {(
+                                        purchaseItem.Unit_Price *
+                                        purchaseItem.Quantity
+                                      ).toFixed(2)}
+                                    </p>
+                                    <p className="text-xs text-gray-500">
+                                      ${purchaseItem.Unit_Price.toFixed(2)} each
+                                    </p>
+                                  </div>
+                                </div>
+                              </CardContent>
+                            </Card>
+                          ))}
+                        </div>
+                      </div>
+                    )
+                  );
+                })()}
+
                 {/* Gift Shop Items included in this purchase */}
                 {(() => {
                   const purchaseGiftItems = purchaseItems.filter(
-                    (pi) => pi.Purchase_ID === selectedPurchase.Purchase_ID
+                    (pi) =>
+                      pi.Purchase_ID === selectedPurchase.Purchase_ID &&
+                      pi.Item_ID !== 9000
                   );
                   return (
                     purchaseGiftItems.length > 0 && (
@@ -838,6 +930,69 @@ export function CustomerDashboard({ user, onNavigate }) {
                               </Card>
                             );
                           })}
+                        </div>
+                      </div>
+                    )
+                  );
+                })()}
+
+                {/* Concession Items included in this purchase */}
+                {(() => {
+                  const purchaseConcessions = purchaseConcessionItems.filter(
+                    (pci) => pci.Purchase_ID === selectedPurchase.Purchase_ID
+                  );
+                  return (
+                    purchaseConcessions.length > 0 && (
+                      <div>
+                        <h3 className="font-medium mb-3">Food & Beverages</h3>
+                        <div className="space-y-2">
+                          {purchaseConcessions.map(
+                            (purchaseConcession, index) => {
+                              const item = concessionItems.find(
+                                (ci) =>
+                                  ci.Concession_Item_ID ===
+                                  purchaseConcession.Concession_Item_ID
+                              );
+                              return (
+                                <Card
+                                  key={`${purchaseConcession.Concession_Item_ID}-${index}`}
+                                >
+                                  <CardContent className="p-4">
+                                    <div className="flex justify-between items-center">
+                                      <div>
+                                        <p className="font-medium">
+                                          {item?.Item_Name}
+                                        </p>
+                                        <p className="text-sm text-gray-600">
+                                          Quantity:{" "}
+                                          {purchaseConcession.Quantity}
+                                        </p>
+                                        <p className="text-sm text-gray-600">
+                                          Item ID: #{item?.Concession_Item_ID}
+                                        </p>
+                                      </div>
+                                      <div className="text-right">
+                                        <p className="font-semibold text-green-600">
+                                          $
+                                          {(
+                                            purchaseConcession.Unit_Price *
+                                            purchaseConcession.Quantity
+                                          ).toFixed(2)}
+                                        </p>
+                                        <p className="text-xs text-gray-500">
+                                          $
+                                          {purchaseConcession.Unit_Price.toFixed(
+                                            2
+                                          )}{" "}
+                                          each
+                                        </p>
+                                      </div>
+                                    </div>
+                                  </CardContent>
+                                </Card>
+                              );
+                            }
+                          )}
                         </div>
                       </div>
                     )

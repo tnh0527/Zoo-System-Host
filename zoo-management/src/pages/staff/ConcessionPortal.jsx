@@ -216,7 +216,7 @@ export function ConcessionPortal({ user, onLogout, onNavigate }) {
       </header>
 
       {/* Main Content */}
-      <div className="container mx-auto px-6 py-12">
+      <div className="container mx-auto px-6 py-12 max-h-[calc(100vh-180px)] overflow-y-auto">
         {/* Stats Dashboard - Moved to Top */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <Card>
@@ -302,9 +302,10 @@ export function ConcessionPortal({ user, onLogout, onNavigate }) {
             </Button>
           </div>
 
-          <Card>
-            <CardContent className="pt-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <Card className="h-[650px] flex flex-col">
+            <CardContent className="pt-6 flex-1 overflow-hidden">
+              {/* Make the list scrollable */}
+              <div className="h-full overflow-y-auto space-y-4 pr-2">
                 {menuItems.map((item) => {
                   const stand = allStands.find(
                     (s) => s.Stand_ID === item.Stand_ID
@@ -312,9 +313,10 @@ export function ConcessionPortal({ user, onLogout, onNavigate }) {
                   return (
                     <div
                       key={item.Concession_Item_ID}
-                      className="border rounded-lg p-4 hover:shadow-md transition-shadow"
+                      className="border rounded-lg p-4 hover:shadow-md transition-shadow flex items-center justify-between"
                     >
-                      <div className="flex items-start space-x-4">
+                      {/* Left side: image + info */}
+                      <div className="flex items-start space-x-4 flex-1 min-w-0">
                         <div className="w-20 h-20 bg-gray-100 rounded-lg flex items-center justify-center overflow-hidden flex-shrink-0">
                           {item.image ? (
                             <ImageWithFallback
@@ -340,11 +342,13 @@ export function ConcessionPortal({ user, onLogout, onNavigate }) {
                           )}
                         </div>
                       </div>
-                      <div className="flex gap-2 mt-4">
+
+                      {/* Right side: buttons */}
+                      <div className="flex gap-2 ml-4 flex-shrink-0">
                         <Button
                           variant="outline"
                           size="sm"
-                          className="flex-1 cursor-pointer"
+                          className="cursor-pointer"
                           onClick={() => handleEditClick(item)}
                         >
                           <Edit2 className="h-3 w-3 mr-1" />

@@ -50,9 +50,6 @@ import {
 } from "recharts";
 import {
   employeeRecords,
-  purchases,
-  tickets,
-  memberships,
   locations,
   jobTitles,
   enclosures,
@@ -83,12 +80,17 @@ import { usePricing } from "../data/PricingContext";
 
 export function AdminPortal({ user, onLogout, onNavigate }) {
   const {
-    animals: animalList,
+    animals,
     addAnimal,
     updateAnimal,
     deleteAnimal,
-    items: giftShopItems,
-    concessionItems: foodItems,
+    items,
+    concessionItems,
+    purchases,
+    tickets,
+    purchaseItems,
+    purchaseConcessionItems,
+    memberships,
   } = useData();
   const {
     ticketPrices,
@@ -151,8 +153,17 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
   const filterByDateRange = (dateString) => {
     const date = new Date(dateString);
     const now = new Date();
+
+    // Reset time parts to compare just dates
+    const dateOnly = new Date(
+      date.getFullYear(),
+      date.getMonth(),
+      date.getDate()
+    );
+    const nowOnly = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
     const daysDiff = Math.floor(
-      (now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24)
+      (nowOnly.getTime() - dateOnly.getTime()) / (1000 * 60 * 60 * 24)
     );
 
     switch (revenueRange) {
@@ -234,22 +245,53 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
     filterByDateRange(m.Start_Date)
   );
 
+  // Calculate ticket revenue from actual ticket purchases
   const ticketRevenue = filteredTickets.reduce(
     (sum, t) => sum + t.Price * t.Quantity,
     0
   );
+
+  // Calculate membership revenue from memberships created in date range
   const membershipRevenue = filteredMemberships.reduce(
     (sum, m) => sum + m.Price,
     0
   );
-  const giftShopRevenue =
-    giftShopItems.reduce((sum, item) => sum + item.Price, 0) * 2.5;
-  const foodRevenue =
-    foodItems.reduce((sum, item) => sum + item.Price, 0) * 3.2;
+
+  // Calculate membership revenue from actual membership purchases (Item_ID 9000)
+  const membershipPurchaseRevenue = purchaseItems
+    .filter((pi) => {
+      const purchase = purchases.find((p) => p.Purchase_ID === pi.Purchase_ID);
+      return (
+        pi.Item_ID === 9000 &&
+        purchase &&
+        filterByDateRange(purchase.Purchase_Date)
+      );
+    })
+    .reduce((sum, pi) => sum + pi.Unit_Price * pi.Quantity, 0);
+
+  // Calculate gift shop revenue from actual purchase items (excluding memberships)
+  const giftShopRevenue = purchaseItems
+    .filter((pi) => {
+      const purchase = purchases.find((p) => p.Purchase_ID === pi.Purchase_ID);
+      return (
+        pi.Item_ID !== 9000 &&
+        purchase &&
+        filterByDateRange(purchase.Purchase_Date)
+      );
+    })
+    .reduce((sum, pi) => sum + pi.Unit_Price * pi.Quantity, 0);
+
+  // Calculate food revenue from actual concession purchase items
+  const foodRevenue = purchaseConcessionItems
+    .filter((pci) => {
+      const purchase = purchases.find((p) => p.Purchase_ID === pci.Purchase_ID);
+      return purchase && filterByDateRange(purchase.Purchase_Date);
+    })
+    .reduce((sum, pci) => sum + pci.Unit_Price * pci.Quantity, 0);
 
   const totalRevenue =
-    ticketRevenue + membershipRevenue + giftShopRevenue + foodRevenue;
-  const totalAnimals = animalList.length;
+    ticketRevenue + membershipPurchaseRevenue + giftShopRevenue + foodRevenue;
+  const totalAnimals = animals.length;
   const totalEmployees = allEmployees.length;
   const activeMemb = memberships.filter((m) => m.Membership_Status).length;
 
@@ -263,7 +305,7 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
     },
     {
       category: "Memberships",
-      amount: membershipRevenue,
+      amount: membershipPurchaseRevenue,
       color: "bg-purple-600",
       icon: Crown,
     },
@@ -281,23 +323,31 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
     },
   ];
 
-  // Ticket stats
+  // Ticket stats - sum quantities instead of counting records
   const ticketStats = [
     {
       type: "Adult",
-      sold: filteredTickets.filter((t) => t.Ticket_Type === "Adult").length,
+      sold: filteredTickets
+        .filter((t) => t.Ticket_Type === "Adult")
+        .reduce((sum, t) => sum + t.Quantity, 0),
     },
     {
       type: "Child",
-      sold: filteredTickets.filter((t) => t.Ticket_Type === "Child").length,
+      sold: filteredTickets
+        .filter((t) => t.Ticket_Type === "Child")
+        .reduce((sum, t) => sum + t.Quantity, 0),
     },
     {
       type: "Senior",
-      sold: filteredTickets.filter((t) => t.Ticket_Type === "Senior").length,
+      sold: filteredTickets
+        .filter((t) => t.Ticket_Type === "Senior")
+        .reduce((sum, t) => sum + t.Quantity, 0),
     },
     {
       type: "Student",
-      sold: filteredTickets.filter((t) => t.Ticket_Type === "Student").length,
+      sold: filteredTickets
+        .filter((t) => t.Ticket_Type === "Student")
+        .reduce((sum, t) => sum + t.Quantity, 0),
     },
   ];
 
@@ -320,65 +370,86 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
     setAllEmployees(
       allEmployees.filter((e) => e.Employee_ID !== emp.Employee_ID)
     );
-    toast.success(`${emp.First_Name} ${emp.Last_Name} has been removed`);
     setDeleteConfirmEmployee(null);
   };
 
   const handleAddEmployee = (formData) => {
     const newEmployee = {
-      Employee_ID: Math.max(...allEmployees.map((e) => e.Employee_ID), 0) + 1,
+      Employee_ID: Math.max(...allEmployees.map((e) => e.Employee_ID)) + 1,
       First_Name: formData.firstName,
       Last_Name: formData.lastName,
-      // Store both Job_ID (from mock data) and Position_ID for compatibility
-      Job_ID: parseInt(formData.jobTitleId),
-      Position_ID: parseInt(formData.jobTitleId),
-      Supervisor_ID: formData.supervisorId
-        ? parseInt(formData.supervisorId)
-        : null,
-      Salary: salaries[parseInt(formData.jobTitleId)] || 0,
-      Hire_Date: formData.hireDate,
+      Birthdate: formData.birthdate,
+      Sex: formData.sex,
+      Job_ID: parseInt(formData.jobId),
+      Salary: salaries[parseInt(formData.jobId)],
       Email: formData.email,
+      Password: "password123",
+      Address: formData.address,
+      Supervisor_ID: null,
+      Job_Title: jobTitles.find((j) => j.Job_ID === parseInt(formData.jobId)),
     };
 
     setAllEmployees([...allEmployees, newEmployee]);
     setIsAddEmployeeOpen(false);
-    toast.success(`${formData.firstName} ${formData.lastName} has been added`);
   };
 
-  const handleManageZone = (zone, supervisorId) => {
+  const handleAssignSupervisor = (zoneId, supervisorId) => {
+    // Update location with new supervisor
     setAllLocations(
       allLocations.map((loc) =>
-        loc.Zone === zone.Zone
+        loc.Location_ID === zoneId
           ? {
               ...loc,
-              Supervisor_ID: supervisorId ? parseInt(supervisorId) : null,
+              Supervisor_ID: supervisorId,
             }
           : loc
       )
     );
 
-    // Update supervisor salary
-    if (supervisorId) {
-      setAllEmployees((prevEmployees) =>
-        prevEmployees.map((emp) =>
-          emp.Employee_ID === parseInt(supervisorId)
-            ? { ...emp, Salary: salaries[2] }
-            : emp
-        )
-      );
-    }
+    // Update employee salaries based on supervisor status
+    setAllEmployees(
+      allEmployees.map((emp) => {
+        const isSupervisor =
+          supervisorId === emp.Employee_ID ||
+          allLocations.some(
+            (loc) =>
+              loc.Location_ID !== zoneId &&
+              loc.Supervisor_ID === emp.Employee_ID
+          );
+        const wasSupervisorOfThisZone =
+          selectedZone?.Supervisor_ID === emp.Employee_ID;
+
+        if (supervisorId === emp.Employee_ID) {
+          // This employee is being assigned as supervisor, give them supervisor salary
+          return { ...emp, Salary: salaries[2] };
+        } else if (
+          wasSupervisorOfThisZone &&
+          !allLocations.some(
+            (loc) =>
+              loc.Location_ID !== zoneId &&
+              loc.Supervisor_ID === emp.Employee_ID
+          )
+        ) {
+          // This employee was removed as supervisor and is not supervising other zones, revert to their job salary
+          return { ...emp, Salary: salaries[emp.Job_ID] || emp.Salary };
+        }
+        return emp;
+      })
+    );
 
     setIsManageZoneOpen(false);
-    toast.success(`Zone ${zone.Zone} supervisor has been updated`);
+    setSelectedZone(null);
+    setSupervisorSearch("");
   };
 
-  const handleSaveSalaries = () => {
-    setSalaries(tempSalaries);
+  const handleSalarySave = () => {
+    // Update actual salary state
+    setSalaries({ ...tempSalaries });
 
-    // Update all employee salaries based on their job titles
-    setAllEmployees((prevEmployees) =>
-      prevEmployees.map((emp) => {
-        // Check if employee is a supervisor
+    // Update all employees with new salaries
+    setAllEmployees(
+      allEmployees.map((emp) => {
+        // Check if this employee is a supervisor of any zone
         const isSupervisor = allLocations.some(
           (loc) => loc.Supervisor_ID === emp.Employee_ID
         );
@@ -387,230 +458,626 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
           // Employee is a supervisor, use supervisor salary
           return { ...emp, Salary: tempSalaries[2] };
         } else {
-          // Not a supervisor, use their position's salary
-          return {
-            ...emp,
-            Salary: tempSalaries[emp.Position_ID] || emp.Salary,
-          };
+          // Use the salary for their job type
+          return { ...emp, Salary: tempSalaries[emp.Job_ID] || emp.Salary };
         }
       })
     );
 
     setIsSalaryManagementOpen(false);
-    toast.success("Salaries have been updated");
+    toast.success("Salaries updated successfully!");
   };
 
-  const handleCancelSalaryChanges = () => {
-    setTempSalaries({ ...salaries });
-    setIsSalaryManagementOpen(false);
+  const handleSalaryDialogOpen = (open) => {
+    if (open) {
+      // Reset temp salaries to current salaries when opening
+      setTempSalaries({ ...salaries });
+    }
+    setIsSalaryManagementOpen(open);
   };
 
-  const handleSavePricing = () => {
+  const handlePricingDialogOpen = (open) => {
+    if (open) {
+      // Reset temp prices to current prices when opening
+      setTempTicketPrices({ ...ticketPrices });
+      setTempMembershipPrice(membershipPrice);
+    }
+    setIsPricingManagementOpen(open);
+  };
+
+  const handlePricingSave = () => {
+    // Update actual pricing state using context
     updateTicketPrices(tempTicketPrices);
     updateMembershipPrice(tempMembershipPrice);
-    setIsPricingManagementOpen(false);
-    toast.success("Pricing has been updated");
-  };
 
-  const handleCancelPricingChanges = () => {
-    setTempTicketPrices({ ...ticketPrices });
-    setTempMembershipPrice(membershipPrice);
     setIsPricingManagementOpen(false);
+    toast.success("Pricing updated successfully!");
   };
 
   const handleAddAnimal = (formData) => {
+    const newAnimalId = Math.max(...animals.map((a) => a.Animal_ID)) + 1;
+    const enclosureId = parseInt(formData.enclosureId);
+    const enclosure = enclosures.find((e) => e.Enclosure_ID === enclosureId);
+
     const newAnimal = {
-      Animal_ID: Math.max(...animalList.map((a) => a.Animal_ID), 0) + 1,
+      Animal_ID: newAnimalId,
       Animal_Name: formData.name,
       Species: formData.species,
       Gender: formData.gender,
       Weight: parseFloat(formData.weight),
       Birthday: formData.birthday,
-      Enclosure_ID: parseInt(formData.enclosureId),
+      Health_Status: formData.healthStatus || "Good",
+      Is_Vaccinated: formData.isVaccinated || false,
+      Enclosure_ID: enclosureId,
+      Enclosure: enclosure,
     };
 
     addAnimal(newAnimal);
     setIsAddAnimalOpen(false);
-    toast.success(`${formData.name} has been added to the zoo`);
+    toast.success(
+      `Successfully added ${formData.name} to ${
+        enclosure?.Enclosure_Name || "the zoo"
+      }!`
+    );
   };
 
   const handleUpdateAnimal = (formData) => {
     if (!editingAnimal) return;
 
-    const updatedAnimal = {
-      ...editingAnimal,
+    const enclosureId = parseInt(formData.enclosureId);
+    const enclosure = enclosures.find((e) => e.Enclosure_ID === enclosureId);
+
+    updateAnimal(editingAnimal.Animal_ID, {
       Animal_Name: formData.name,
       Species: formData.species,
       Gender: formData.gender,
       Weight: parseFloat(formData.weight),
       Birthday: formData.birthday,
-      Enclosure_ID: parseInt(formData.enclosureId),
-    };
-
-    updateAnimal(updatedAnimal);
+      Health_Status: formData.healthStatus,
+      Is_Vaccinated: formData.isVaccinated,
+      Enclosure_ID: enclosureId,
+      Enclosure: enclosure,
+    });
     setEditingAnimal(null);
-    toast.success(`${formData.name} has been updated`);
+    toast.success(`Successfully updated ${formData.name}'s information!`);
   };
 
   const handleDeleteAnimal = (animal) => {
     deleteAnimal(animal.Animal_ID);
     setDeleteConfirmAnimal(null);
-    setEditingAnimal(null);
-    toast.success(`${animal.Animal_Name} has been removed from the zoo`);
+    toast.success(`Successfully removed ${animal.Animal_Name} from the zoo.`);
   };
 
-  // Pie chart data for revenue breakdown
-  const pieData = revenueBreakdown.map((item) => ({
-    name: item.category,
-    value: item.amount,
-  }));
+  const getRangeLabel = () => {
+    switch (revenueRange) {
+      case "today":
+        return "Today";
+      case "week":
+        return "Past Week";
+      case "month":
+        return "Past Month";
+      case "year":
+        return "Past Year";
+      case "all":
+        return "All Time";
+    }
+  };
 
-  const COLORS = ["#16a34a", "#9333ea", "#2563eb", "#ea580c"];
+  // Get employees in a specific zone
+  const getZoneEmployees = (location) => {
+    return allEmployees.filter((emp) => {
+      if (location.Supervisor_ID === emp.Employee_ID) return true;
+      const supervisor = allEmployees.find(
+        (e) => e.Employee_ID === emp.Supervisor_ID
+      );
+      if (supervisor && location.Supervisor_ID === supervisor.Employee_ID)
+        return true;
+      return false;
+    });
+  };
+
+  // Filter employees for supervisor selection
+  const filteredEmployeesForSupervisor = useMemo(() => {
+    // Get all employee IDs that are currently supervisors
+    const currentSupervisorIds = allLocations
+      .map((loc) => loc.Supervisor_ID)
+      .filter((id) => id !== null);
+
+    // Filter out employees who are already supervisors
+    const availableEmployees = allEmployees.filter(
+      (emp) => !currentSupervisorIds.includes(emp.Employee_ID)
+    );
+
+    if (!supervisorSearch) return availableEmployees;
+    const search = supervisorSearch.toLowerCase();
+    return availableEmployees.filter(
+      (emp) =>
+        emp.First_Name.toLowerCase().includes(search) ||
+        emp.Last_Name.toLowerCase().includes(search) ||
+        emp.Employee_ID.toString().includes(search)
+    );
+  }, [allEmployees, allLocations, supervisorSearch]);
 
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <header className="bg-gradient-to-r from-teal-600 to-emerald-600 text-white shadow-lg">
-        <div className="container mx-auto px-6 py-6">
-          <div className="flex justify-between items-center">
-            <div className="flex items-center gap-4">
-              <Button
-                variant="ghost"
-                onClick={() => onNavigate("home")}
-                className="text-white hover:bg-white/20 cursor-pointer"
-              >
-                <Home className="h-5 w-5 mr-2" />
-                Home
-              </Button>
+      <header className="bg-white border-b sticky top-0 z-50">
+        <div className="container mx-auto px-6 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-4">
+              <ZooLogo size={40} />
               <div>
-                <h1 className="text-3xl font-bold">Admin Portal</h1>
-                <p className="text-teal-100">
-                  Welcome, {user.First_Name} {user.Last_Name}
+                <h1 className="font-semibold text-xl">Admin Portal</h1>
+                <p className="text-sm text-gray-600">
+                  WildWood Zoo Management Dashboard
                 </p>
               </div>
             </div>
-            <Button
-              onClick={onLogout}
-              variant="ghost"
-              className="text-white hover:bg-white/20 cursor-pointer"
-            >
-              <LogOut className="h-5 w-5 mr-2" />
-              Logout
-            </Button>
+            <div className="flex items-center space-x-4">
+              <div className="text-right">
+                <p className="font-medium">Welcome, Administrator</p>
+                <p className="text-sm text-gray-600">Full System Access</p>
+              </div>
+              <Button
+                variant="outline"
+                onClick={() => onNavigate("home")}
+                className="border-teal-600 text-teal-600 cursor-pointer"
+              >
+                <Home className="h-4 w-4 mr-2" />
+                View Public Site
+              </Button>
+              <Button
+                variant="outline"
+                onClick={onLogout}
+                className="border-green-600 text-green-600 cursor-pointer"
+              >
+                <LogOut className="h-4 w-4 mr-2" />
+                Logout
+              </Button>
+            </div>
           </div>
         </div>
       </header>
 
       {/* Main Content */}
-      <main className="container mx-auto px-6 py-8">
-        {/* Last Updated Banner */}
-        <div className="mb-6 flex justify-between items-center">
-          <div className="flex items-center gap-2 text-sm text-gray-600">
-            <Calendar className="h-4 w-4" />
-            <span>Last updated: Today at {formatLastUpdated()}</span>
+      <div className="container mx-auto px-6 py-12 space-y-8">
+        {/* Revenue Range Filter */}
+        <section>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-2xl">📊 Overview Statistics</h2>
+            <div className="flex items-center space-x-3">
+              <span className="text-sm text-gray-600 italic">
+                Last Updated: {formatLastUpdated()}
+              </span>
+              <Calendar className="h-5 w-5 text-gray-600" />
+              <Select
+                value={revenueRange}
+                onValueChange={(value) => setRevenueRange(value)}
+              >
+                <SelectTrigger className="w-[180px] cursor-pointer">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="today">Today</SelectItem>
+                  <SelectItem value="week">Past Week</SelectItem>
+                  <SelectItem value="month">Past Month</SelectItem>
+                  <SelectItem value="year">Past Year</SelectItem>
+                  <SelectItem value="all">All Time</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
-          <div className="flex gap-2">
-            <Select
-              value={revenueRange}
-              onValueChange={(value) => setRevenueRange(value)}
-            >
-              <SelectTrigger className="w-[180px] cursor-pointer">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="today">Today</SelectItem>
-                <SelectItem value="week">Past Week</SelectItem>
-                <SelectItem value="month">Past Month</SelectItem>
-                <SelectItem value="year">Past Year</SelectItem>
-                <SelectItem value="all">All Time</SelectItem>
-              </SelectContent>
-            </Select>
+          <p className="text-sm text-gray-600 mb-6">
+            Showing revenue for:{" "}
+            <Badge className="bg-green-600 text-white ml-1">
+              {getRangeLabel()}
+            </Badge>
+          </p>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <Card className="border-l-4 border-l-green-600">
+              <CardContent className="pt-6">
+                <div className="flex items-center space-x-3">
+                  <DollarSign className="h-8 w-8 text-green-600" />
+                  <div>
+                    <p className="text-sm text-gray-600">Total Revenue</p>
+                    <p className="text-2xl font-semibold text-green-600">
+                      $
+                      {totalRevenue.toLocaleString("en-US", {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="border-l-4 border-l-teal-600">
+              <CardContent className="pt-6">
+                <div className="flex items-center space-x-3">
+                  <PawPrint className="h-8 w-8 text-teal-600" />
+                  <div>
+                    <p className="text-sm text-gray-600">Total Animals</p>
+                    <p className="text-2xl font-semibold text-teal-600">
+                      {formatNumber(totalAnimals)}
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="border-l-4 border-l-yellow-600">
+              <CardContent className="pt-6">
+                <div className="flex items-center space-x-3">
+                  <Users className="h-8 w-8 text-yellow-600" />
+                  <div>
+                    <p className="text-sm text-gray-600">Total Staff</p>
+                    <p className="text-2xl font-semibold text-yellow-600">
+                      {formatNumber(totalEmployees)}
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="border-l-4 border-l-purple-600">
+              <CardContent className="pt-6">
+                <div className="flex items-center space-x-3">
+                  <Crown className="h-8 w-8 text-purple-600" />
+                  <div>
+                    <p className="text-sm text-gray-600">Active Memberships</p>
+                    <p className="text-2xl font-semibold text-purple-600">
+                      {formatNumber(activeMemb)}
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
           </div>
-        </div>
-
-        {/* Key Metrics */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          <Card className="bg-gradient-to-br from-green-500 to-green-600 text-white">
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-green-100 text-sm">Total Revenue</p>
-                  <p className="text-3xl font-bold">
-                    ${formatNumber(Math.round(totalRevenue))}
-                  </p>
-                </div>
-                <DollarSign className="h-12 w-12 text-green-200" />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="bg-gradient-to-br from-blue-500 to-blue-600 text-white">
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-blue-100 text-sm">Active Members</p>
-                  <p className="text-3xl font-bold">
-                    {formatNumber(activeMemb)}
-                  </p>
-                </div>
-                <Crown className="h-12 w-12 text-blue-200" />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="bg-gradient-to-br from-purple-500 to-purple-600 text-white">
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-purple-100 text-sm">Total Animals</p>
-                  <p className="text-3xl font-bold">
-                    {formatNumber(totalAnimals)}
-                  </p>
-                </div>
-                <PawPrint className="h-12 w-12 text-purple-200" />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="bg-gradient-to-br from-orange-500 to-orange-600 text-white">
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-orange-100 text-sm">Employees</p>
-                  <p className="text-3xl font-bold">
-                    {formatNumber(totalEmployees)}
-                  </p>
-                </div>
-                <Users className="h-12 w-12 text-orange-200" />
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+        </section>
 
         {/* Revenue Breakdown */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+        <section id="revenue">
+          <h2 className="text-2xl mb-6">💰 Revenue Breakdown</h2>
           <Card>
-            <CardHeader>
-              <CardTitle>Revenue by Category</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {revenueBreakdown.map((item, index) => {
-                  const IconComponent = item.icon;
+            <CardContent className="pt-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                {revenueBreakdown.map((stat) => {
+                  const IconComponent = stat.icon;
                   return (
                     <div
-                      key={index}
-                      className="flex items-center justify-between"
+                      key={stat.category}
+                      className="p-4 bg-gray-50 rounded-lg border border-gray-200"
                     >
-                      <div className="flex items-center gap-3">
-                        <div className={`p-2 rounded-lg ${item.color}`}>
-                          <IconComponent className="h-5 w-5 text-white" />
-                        </div>
-                        <span className="font-medium">{item.category}</span>
+                      <div className="flex items-center justify-center mb-3">
+                        <IconComponent
+                          className={`h-10 w-10 ${stat.color.replace(
+                            "bg-",
+                            "text-"
+                          )}`}
+                        />
                       </div>
-                      <span className="text-xl font-semibold text-gray-900">
-                        ${formatNumber(Math.round(item.amount))}
+                      <h3 className="font-medium text-center mb-2">
+                        {stat.category}
+                      </h3>
+                      <p className="text-2xl font-semibold text-center text-green-600">
+                        $
+                        {stat.amount.toLocaleString("en-US", {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
+        </section>
+
+        {/* Ticket Sales */}
+        <section id="tickets">
+          <h2 className="text-2xl mb-6">🎫 Ticket Sales</h2>
+          <Card>
+            <CardContent className="pt-6">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {ticketStats.map((stat) => (
+                  <div
+                    key={stat.type}
+                    className="text-center p-4 bg-green-50 rounded-lg"
+                  >
+                    <p className="text-sm text-gray-600 mb-1">{stat.type}</p>
+                    <p className="text-2xl font-semibold text-green-600">
+                      {formatNumber(stat.sold)}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </section>
+
+        {/* Pricing Management */}
+        <section id="pricing">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-2xl">💳 Pricing Management</h2>
+            <Button
+              className="bg-purple-600 hover:bg-purple-700 cursor-pointer"
+              onClick={() => handlePricingDialogOpen(true)}
+            >
+              <Edit className="h-4 w-4 mr-2" />
+              Edit Prices
+            </Button>
+          </div>
+
+          <Card>
+            <CardContent className="pt-6">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                {/* Ticket Prices */}
+                <div>
+                  <h3 className="font-semibold mb-3 text-green-700">
+                    Day Pass Tickets
+                  </h3>
+                  <div className="space-y-2">
+                    {Object.entries(ticketPrices).map(([type, price]) => (
+                      <div
+                        key={type}
+                        className="flex items-center justify-between p-3 bg-green-50 rounded-lg border border-green-200"
+                      >
+                        <span className="text-gray-700">{type}</span>
+                        <span className="font-semibold text-green-600">
+                          ${price.toFixed(2)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Membership Price */}
+                <div>
+                  <h3 className="font-semibold mb-3 text-purple-700">
+                    Annual Membership
+                  </h3>
+                  <div className="p-4 bg-purple-50 rounded-lg border border-purple-200">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-gray-700">Annual Membership</span>
+                      <span className="font-semibold text-purple-600 text-xl">
+                        ${membershipPrice.toFixed(2)}
                       </span>
+                    </div>
+                    <p className="text-sm text-gray-600">
+                      Unlimited year-round access + benefits
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Pricing Management Dialog */}
+          <Dialog
+            open={isPricingManagementOpen}
+            onOpenChange={handlePricingDialogOpen}
+          >
+            <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>Manage Ticket & Membership Prices</DialogTitle>
+                <DialogDescription>
+                  Update pricing for tickets and memberships. Changes will be
+                  reflected immediately.
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="space-y-6">
+                {/* Ticket Prices */}
+                <div>
+                  <h3 className="font-semibold text-lg mb-4 text-green-700">
+                    Day Pass Ticket Prices
+                  </h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {Object.entries(tempTicketPrices).map(([type, price]) => (
+                      <div key={type} className="space-y-2">
+                        <Label
+                          htmlFor={`ticket-${type}`}
+                          className="text-gray-700"
+                        >
+                          {type} Ticket
+                        </Label>
+                        <div className="flex items-center space-x-2">
+                          <span className="text-gray-600">$</span>
+                          <Input
+                            id={`ticket-${type}`}
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            value={price}
+                            onChange={(e) =>
+                              setTempTicketPrices((prev) => ({
+                                ...prev,
+                                [type]: parseFloat(e.target.value) || 0,
+                              }))
+                            }
+                            className="flex-1"
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Membership Price */}
+                <div>
+                  <h3 className="font-semibold text-lg mb-4 text-purple-700">
+                    Annual Membership Price
+                  </h3>
+                  <div className="space-y-2 max-w-sm">
+                    <Label htmlFor="membership-price" className="text-gray-700">
+                      Annual Membership
+                    </Label>
+                    <div className="flex items-center space-x-2">
+                      <span className="text-gray-600">$</span>
+                      <Input
+                        id="membership-price"
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={tempMembershipPrice}
+                        onChange={(e) =>
+                          setTempMembershipPrice(
+                            parseFloat(e.target.value) || 0
+                          )
+                        }
+                        className="flex-1"
+                      />
+                    </div>
+                    <p className="text-sm text-gray-600">
+                      Unlimited year-round access + member benefits
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end mt-6">
+                <Button
+                  onClick={handlePricingSave}
+                  className="bg-green-600 hover:bg-green-700 cursor-pointer"
+                >
+                  <Save className="h-4 w-4 mr-2" />
+                  Save Changes
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+        </section>
+
+        {/* Revenue Analytics Charts */}
+        <section id="analytics">
+          <h2 className="text-2xl mb-6">📈 Analytics</h2>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Bar Chart - Ticket Stats */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Ticket Statistics</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ResponsiveContainer width="100%" height={300}>
+                  <BarChart data={ticketStats}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="type" />
+                    <YAxis
+                      allowDecimals={false}
+                      label={{
+                        value: "Amount",
+                        angle: -90,
+                        position: "insideLeft",
+                      }}
+                    />
+                    <Tooltip />
+                    <Legend />
+                    <Bar dataKey="sold" fill="#4CAF50" name="Tickets Sold" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+
+            {/* Pie Chart */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Revenue Distribution</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ResponsiveContainer width="100%" height={300}>
+                  <PieChart>
+                    <Pie
+                      data={revenueBreakdown.map((item) => ({
+                        name: item.category,
+                        value: item.amount,
+                      }))}
+                      cx="50%"
+                      cy="50%"
+                      labelLine={false}
+                      label={({ name, percent }) =>
+                        `${name}: ${(percent * 100).toFixed(0)}%`
+                      }
+                      outerRadius={80}
+                      fill="#8884d8"
+                      dataKey="value"
+                    >
+                      <Cell fill="#4CAF50" />
+                      <Cell fill="#9C27B0" />
+                      <Cell fill="#2196F3" />
+                      <Cell fill="#FF9800" />
+                    </Pie>
+                    <Tooltip formatter={(value) => `$${value.toFixed(2)}`} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+          </div>
+        </section>
+
+        {/* Zone Overview */}
+        <section>
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-2xl">🗺️ Zone Overview</h2>
+          </div>
+          <Card>
+            <CardContent className="pt-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                {allLocations.map((location) => {
+                  const supervisor = allEmployees.find(
+                    (e) => e.Employee_ID === location.Supervisor_ID
+                  );
+                  const zoneEmployees = getZoneEmployees(location);
+                  return (
+                    <div
+                      key={location.Zone}
+                      className="p-4 bg-teal-50 rounded-lg border border-teal-200"
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <h3 className="font-semibold text-lg">
+                          Zone {location.Zone}
+                        </h3>
+                        <Badge className="bg-teal-600">{location.Zone}</Badge>
+                      </div>
+                      <p className="text-sm text-gray-600 mb-3">
+                        {location.Location_Description}
+                      </p>
+                      <p className="text-sm mb-1">
+                        <span className="font-medium">Supervisor:</span>{" "}
+                        {supervisor
+                          ? `${supervisor.First_Name} ${supervisor.Last_Name}`
+                          : "Unassigned"}
+                      </p>
+                      <p className="text-sm mb-3">
+                        <span className="font-medium">Employees:</span>{" "}
+                        {zoneEmployees.length}
+                      </p>
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="flex-1 border-teal-600 text-teal-600 hover:bg-teal-50 cursor-pointer"
+                          onClick={() => setViewZoneEmployees(location)}
+                        >
+                          <Eye className="h-4 w-4 mr-2" />
+                          View
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="flex-1 border-purple-600 text-purple-600 hover:bg-purple-50 cursor-pointer"
+                          onClick={() => {
+                            setSelectedZone(location);
+                            setIsManageZoneOpen(true);
+                            setSupervisorSearch("");
+                          }}
+                        >
+                          <Edit className="h-4 w-4 mr-2" />
+                          Supervisor
+                        </Button>
+                      </div>
                     </div>
                   );
                 })}
@@ -618,121 +1085,231 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
             </CardContent>
           </Card>
 
+          {/* View Zone Employees Dialog */}
+          <Dialog
+            open={viewZoneEmployees !== null}
+            onOpenChange={() => setViewZoneEmployees(null)}
+          >
+            <DialogContent className="max-w-2xl">
+              <DialogHeader>
+                <DialogTitle>
+                  Zone {viewZoneEmployees?.Zone} Employees
+                </DialogTitle>
+                <DialogDescription>
+                  {viewZoneEmployees?.Location_Description}
+                </DialogDescription>
+              </DialogHeader>
+              <ScrollArea className="max-h-[500px] pr-4">
+                <div className="space-y-3">
+                  {viewZoneEmployees &&
+                  getZoneEmployees(viewZoneEmployees).length > 0 ? (
+                    getZoneEmployees(viewZoneEmployees).map((emp) => (
+                      <div
+                        key={emp.Employee_ID}
+                        className="p-4 bg-gray-50 rounded-lg border border-gray-200"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="font-medium">
+                              {emp.Last_Name}, {emp.First_Name}
+                            </p>
+                            <p className="text-sm text-gray-600">
+                              {emp.Job_Title?.Title}
+                            </p>
+                            <p className="text-sm text-gray-600">
+                              ID: {emp.Employee_ID}
+                            </p>
+                          </div>
+                          <Badge className="bg-teal-100 text-teal-800">
+                            {viewZoneEmployees.Supervisor_ID === emp.Employee_ID
+                              ? "Supervisor"
+                              : "Staff"}
+                          </Badge>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-center py-8 text-gray-500">
+                      No employees assigned to this zone
+                    </div>
+                  )}
+                </div>
+              </ScrollArea>
+            </DialogContent>
+          </Dialog>
+        </section>
+
+        {/* Salary Management */}
+        <section id="salary">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-2xl">💵 Salary Management</h2>
+            <Button
+              className="bg-blue-600 hover:bg-blue-700 cursor-pointer"
+              onClick={() => handleSalaryDialogOpen(true)}
+            >
+              <DollarSign className="h-4 w-4 mr-2" />
+              Manage Salaries
+            </Button>
+          </div>
           <Card>
-            <CardHeader>
-              <CardTitle>Revenue Distribution</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ResponsiveContainer width="100%" height={300}>
-                <PieChart>
-                  <Pie
-                    data={pieData}
-                    cx="50%"
-                    cy="50%"
-                    labelLine={false}
-                    label={({ name, percent }) =>
-                      `${name}: ${(percent * 100).toFixed(0)}%`
-                    }
-                    outerRadius={80}
-                    fill="#8884d8"
-                    dataKey="value"
-                  >
-                    {pieData.map((entry, index) => (
-                      <Cell
-                        key={`cell-${index}`}
-                        fill={COLORS[index % COLORS.length]}
-                      />
-                    ))}
-                  </Pie>
-                  <Tooltip
-                    formatter={(value) => `$${formatNumber(Math.round(value))}`}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
+            <CardContent className="pt-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                {jobTitles
+                  .filter((j) => j.Job_ID !== 1)
+                  .map((job) => {
+                    const avgSalary = salaries[job.Job_ID] || 0;
+                    const displayTitle =
+                      job.Job_ID === 2 ? "Supervisor" : job.Title;
+                    return (
+                      <div
+                        key={job.Job_ID}
+                        className="p-4 bg-blue-50 rounded-lg border border-blue-200"
+                      >
+                        <h3 className="font-medium mb-2">{displayTitle}</h3>
+                        <p className="text-2xl font-semibold text-blue-600 mb-1">
+                          ${avgSalary.toLocaleString()}
+                        </p>
+                      </div>
+                    );
+                  })}
+              </div>
             </CardContent>
           </Card>
-        </div>
 
-        {/* Ticket Sales Chart */}
-        <Card className="mb-8">
-          <CardHeader>
-            <CardTitle>Ticket Sales by Type</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={ticketStats}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="type" />
-                <YAxis />
-                <Tooltip />
-                <Legend />
-                <Bar dataKey="sold" fill="#16a34a" name="Tickets Sold" />
-              </BarChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
+          {/* Salary Management Dialog */}
+          <Dialog
+            open={isSalaryManagementOpen}
+            onOpenChange={handleSalaryDialogOpen}
+          >
+            <DialogContent className="max-w-2xl">
+              <DialogHeader>
+                <DialogTitle>Manage Employee Salaries</DialogTitle>
+                <DialogDescription>
+                  Update salaries for each job type. Changes will apply to all
+                  employees in that role.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
+                {jobTitles
+                  .filter((j) => j.Job_ID !== 1)
+                  .map((job) => {
+                    const displayTitle =
+                      job.Job_ID === 2 ? "Supervisor" : job.Title;
+                    const displayDescription =
+                      job.Job_ID === 2
+                        ? "Zone supervision and operations"
+                        : job.Description;
+                    return (
+                      <div
+                        key={job.Job_ID}
+                        className="flex items-center justify-between p-4 border rounded-lg"
+                      >
+                        <div>
+                          <h3 className="font-medium">{displayTitle}</h3>
+                          <p className="text-sm text-gray-600">
+                            {displayDescription}
+                          </p>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <Input
+                            type="number"
+                            step="1000"
+                            value={tempSalaries[job.Job_ID] || 0}
+                            onChange={(e) =>
+                              setTempSalaries((prev) => ({
+                                ...prev,
+                                [job.Job_ID]: parseFloat(e.target.value) || 0,
+                              }))
+                            }
+                            className="w-32"
+                          />
+                          <span className="text-gray-600">$/year</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+              <div className="flex justify-end mt-4">
+                <Button
+                  onClick={handleSalarySave}
+                  className="bg-green-600 hover:bg-green-700 cursor-pointer"
+                >
+                  <Save className="h-4 w-4 mr-2" />
+                  Save Changes
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+        </section>
 
-        {/* Management Sections */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-          {/* Employee Management */}
+        {/* Employee Management */}
+        <section id="employees">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-2xl">👥 Staff Management</h2>
+            <AddEmployeeDialog
+              isOpen={isAddEmployeeOpen}
+              onOpenChange={setIsAddEmployeeOpen}
+              onAdd={handleAddEmployee}
+              allEmployees={allEmployees}
+              salaries={salaries}
+            />
+          </div>
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle className="flex items-center gap-2">
-                <Users className="h-5 w-5" />
-                Employee Management
-              </CardTitle>
-              <Dialog
-                open={isAddEmployeeOpen}
-                onOpenChange={setIsAddEmployeeOpen}
-              >
-                <DialogTrigger asChild>
-                  <Button
-                    size="sm"
-                    className="bg-teal-600 hover:bg-teal-700 cursor-pointer"
-                  >
-                    <UserPlus className="h-4 w-4 mr-2" />
-                    Add Employee
-                  </Button>
-                </DialogTrigger>
-                <AddEmployeeDialog
-                  onAdd={handleAddEmployee}
-                  employees={allEmployees}
-                  jobTitles={jobTitles}
-                  locations={allLocations}
-                />
-              </Dialog>
-            </CardHeader>
-            <CardContent>
-              <ScrollArea className="h-[400px] pr-4">
+            <CardContent className="pt-6">
+              <p className="text-sm text-gray-600 mb-4">
+                Total Employees: {allEmployees.length}
+              </p>
+              <ScrollArea className="h-[600px] pr-4">
                 <div className="space-y-3">
                   {sortedEmployees.map((emp) => (
                     <div
                       key={emp.Employee_ID}
-                      className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
+                      className="flex items-start justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors border border-gray-200"
                     >
                       <div className="flex-1">
-                        <p className="font-medium">
-                          {emp.First_Name} {emp.Last_Name}
-                        </p>
-                        <div className="flex items-center gap-2 mt-1">
-                          <Badge variant="secondary" className="text-xs">
-                            {jobTitles.find(
-                              (j) => j.Position_ID === emp.Position_ID
-                            )?.Title || "Unknown"}
+                        <div className="flex items-center space-x-3 mb-2">
+                          <p className="font-medium text-lg">
+                            {emp.Last_Name}, {emp.First_Name}
+                          </p>
+                          <Badge className="bg-green-100 text-green-800">
+                            {emp.Job_Title?.Title}
                           </Badge>
-                          <span className="text-xs text-gray-600">
-                            {getEmployeeZone(emp)}
-                          </span>
                         </div>
-                        <p className="text-sm text-gray-600 mt-1">
-                          Salary: ${formatNumber(emp.Salary)}/year
-                        </p>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 text-sm text-gray-600">
+                          <div>
+                            <span className="font-medium">Email:</span>{" "}
+                            {emp.Email}
+                          </div>
+                          <div>
+                            <span className="font-medium">Employee ID:</span>{" "}
+                            {emp.Employee_ID}
+                          </div>
+                          <div>
+                            <span className="font-medium">Zone:</span>{" "}
+                            {getEmployeeZone(emp)}
+                          </div>
+                          <div>
+                            <span className="font-medium">Birthdate:</span>{" "}
+                            {formatDate(emp.Birthdate)}
+                          </div>
+                          <div>
+                            <span className="font-medium">Sex:</span> {emp.Sex}
+                          </div>
+                          <div>
+                            <span className="font-medium">Salary:</span> $
+                            {emp.Salary.toLocaleString()}
+                          </div>
+                          <div className="md:col-span-2">
+                            <span className="font-medium">Address:</span>{" "}
+                            {emp.Address}
+                          </div>
+                        </div>
                       </div>
                       <Button
                         variant="ghost"
                         size="sm"
                         onClick={() => setDeleteConfirmEmployee(emp)}
-                        className="text-red-600 hover:text-red-700 hover:bg-red-50 cursor-pointer"
+                        className="text-red-600 hover:text-red-700 hover:bg-red-50 ml-4 cursor-pointer"
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>
@@ -740,87 +1317,79 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
                   ))}
                 </div>
               </ScrollArea>
-              <div className="mt-4 pt-4 border-t">
-                <Button
-                  variant="outline"
-                  className="w-full cursor-pointer"
-                  onClick={() => setIsSalaryManagementOpen(true)}
-                >
-                  <DollarSign className="h-4 w-4 mr-2" />
-                  Manage Salaries
-                </Button>
-              </div>
             </CardContent>
           </Card>
+        </section>
 
-          {/* Zone Management */}
+        {/* Animal Management */}
+        <section id="animals">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-2xl">🐾 Animal Management</h2>
+            <AddAnimalDialog
+              isOpen={isAddAnimalOpen}
+              onOpenChange={setIsAddAnimalOpen}
+              onAdd={handleAddAnimal}
+              enclosures={enclosures}
+            />
+          </div>
           <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Home className="h-5 w-5" />
-                Zone Management
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ScrollArea className="h-[400px] pr-4">
-                <div className="space-y-3">
-                  {allLocations.map((zone) => {
-                    const supervisor = allEmployees.find(
-                      (e) => e.Employee_ID === zone.Supervisor_ID
+            <CardContent className="pt-6">
+              <p className="text-sm text-gray-600 mb-4">
+                Manage zoo animals and their habitats
+              </p>
+              <ScrollArea className="h-[400px]">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                  {animals.map((animal, index) => {
+                    const enclosure = enclosures.find(
+                      (e) => e.Enclosure_ID === animal.Enclosure_ID
                     );
-                    const zoneEmployees = allEmployees.filter((e) => {
-                      if (e.Employee_ID === zone.Supervisor_ID) return true;
-                      const empSupervisor = allEmployees.find(
-                        (s) => s.Employee_ID === e.Supervisor_ID
-                      );
-                      return (
-                        empSupervisor &&
-                        empSupervisor.Employee_ID === zone.Supervisor_ID
-                      );
-                    });
+                    // Generate a mock date added (based on animal ID for consistency)
+                    const daysAgo = (animal.Animal_ID * 13) % 365; // Pseudo-random but consistent
+                    const dateAdded = new Date();
+                    dateAdded.setDate(dateAdded.getDate() - daysAgo);
+                    const dateAddedString = formatDate(
+                      dateAdded.toISOString().split("T")[0]
+                    );
 
                     return (
                       <div
-                        key={zone.Zone}
-                        className="p-4 bg-gray-50 rounded-lg"
+                        key={animal.Animal_ID}
+                        className="p-4 bg-teal-50 rounded-lg border border-teal-200 flex items-center justify-between"
                       >
-                        <div className="flex items-start justify-between mb-3">
-                          <div className="flex-1">
-                            <h4 className="font-semibold text-lg">
-                              Zone {zone.Zone}
-                            </h4>
-                            <p className="text-sm text-gray-600 mt-1">
-                              Supervisor:{" "}
-                              {supervisor
-                                ? `${supervisor.First_Name} ${supervisor.Last_Name}`
-                                : "Unassigned"}
-                            </p>
-                            <p className="text-sm text-gray-600">
-                              Employees: {zoneEmployees.length}
-                            </p>
+                        <div className="flex items-center space-x-4">
+                          <div className="flex items-center justify-center w-10 h-10 rounded-full bg-teal-600 text-white flex-shrink-0">
+                            <PawPrint className="h-5 w-5" />
                           </div>
-                          <div className="flex gap-2">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => setViewZoneEmployees(zone)}
-                              className="cursor-pointer"
-                            >
-                              <Eye className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => {
-                                setSelectedZone(zone);
-                                setIsManageZoneOpen(true);
-                              }}
-                              className="cursor-pointer"
-                            >
-                              <Edit className="h-4 w-4" />
-                            </Button>
+                          <div>
+                            <p className="font-medium">{animal.Animal_Name}</p>
+                            <p className="text-sm text-gray-600">
+                              {animal.Species} •{" "}
+                              {animal.Gender === "M"
+                                ? "Male"
+                                : animal.Gender === "F"
+                                ? "Female"
+                                : "Unknown"}{" "}
+                              • ID: {animal.Animal_ID}
+                            </p>
+                            <p className="text-xs text-gray-500">
+                              Weight: {animal.Weight} lbs • Born:{" "}
+                              {formatDate(animal.Birthday)}
+                            </p>
+                            <p className="text-xs text-gray-500">
+                              Habitat: {enclosure?.Enclosure_Name || "Unknown"}{" "}
+                              • Added: {dateAddedString}
+                            </p>
                           </div>
                         </div>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="bg-blue-50 border-blue-300 text-blue-600 hover:bg-blue-100 cursor-pointer flex-shrink-0"
+                          onClick={() => setEditingAnimal(animal)}
+                        >
+                          <Edit className="h-4 w-4 mr-2" />
+                          Edit
+                        </Button>
                       </div>
                     );
                   })}
@@ -828,545 +1397,224 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
               </ScrollArea>
             </CardContent>
           </Card>
-        </div>
+        </section>
 
-        {/* Animal Management Section */}
-        <Card className="mb-8">
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="flex items-center gap-2">
-              <PawPrint className="h-5 w-5" />
-              Animal Management
-            </CardTitle>
-            <Button
-              className="bg-teal-600 hover:bg-teal-700 cursor-pointer"
-              onClick={() => setIsAddAnimalOpen(true)}
-            >
-              <Plus className="h-4 w-4 mr-2" />
-              Add Animal
-            </Button>
-          </CardHeader>
-          <CardContent>
-            <ScrollArea className="h-[500px] pr-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {animalList.map((animal) => {
-                  const enclosure = enclosures.find(
-                    (e) => e.Enclosure_ID === animal.Enclosure_ID
-                  );
-                  const age =
-                    new Date().getFullYear() -
-                    new Date(animal.Birthday).getFullYear();
+        {/* Zone Supervisor Assignment Dialog */}
+        <Dialog
+          open={isManageZoneOpen}
+          onOpenChange={(open) => {
+            setIsManageZoneOpen(open);
+            if (!open) setSupervisorSearch("");
+          }}
+        >
+          <DialogContent className="max-w-3xl">
+            <DialogHeader>
+              <DialogTitle>Manage Zone Supervisor</DialogTitle>
+              <DialogDescription>
+                {selectedZone &&
+                  `Select a supervisor for Zone ${selectedZone.Zone}: ${selectedZone.Location_Description}`}
+              </DialogDescription>
+            </DialogHeader>
 
-                  return (
-                    <Card
-                      key={animal.Animal_ID}
-                      className="hover:shadow-lg transition-shadow"
-                    >
-                      <CardContent className="pt-6">
-                        <div className="flex items-start justify-between mb-3">
-                          <div className="flex-1">
-                            <h4 className="font-semibold text-lg">
-                              {animal.Animal_Name}
-                            </h4>
-                            <p className="text-sm text-gray-600">
-                              {animal.Species}
-                            </p>
-                          </div>
-                          <div className="flex gap-1">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => setEditingAnimal(animal)}
-                              className="cursor-pointer"
-                            >
-                              <Edit className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => setDeleteConfirmAnimal(animal)}
-                              className="text-red-600 hover:text-red-700 hover:bg-red-50 cursor-pointer"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </div>
-                        <div className="space-y-2 text-sm">
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">Gender:</span>
-                            <span className="font-medium">
-                              {animal.Gender === "M"
-                                ? "Male"
-                                : animal.Gender === "F"
-                                ? "Female"
-                                : "Unknown"}
-                            </span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">Age:</span>
-                            <span className="font-medium">{age} years</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">Weight:</span>
-                            <span className="font-medium">
-                              {animal.Weight} lbs
-                            </span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">Habitat:</span>
-                            <span className="font-medium">
-                              {enclosure?.Enclosure_Name}
-                            </span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">ID:</span>
-                            <span className="font-medium">
-                              #{animal.Animal_ID}
-                            </span>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  );
-                })}
-              </div>
-            </ScrollArea>
-          </CardContent>
-        </Card>
-
-        {/* Pricing Management */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="flex items-center gap-2">
-              <DollarSign className="h-5 w-5" />
-              Pricing Management
-            </CardTitle>
-            <Button
-              variant="outline"
-              className="cursor-pointer"
-              onClick={() => setIsPricingManagementOpen(true)}
-            >
-              <Edit className="h-4 w-4 mr-2" />
-              Edit Pricing
-            </Button>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <h4 className="font-semibold mb-3">Ticket Prices</h4>
-                <div className="space-y-2">
-                  <div className="flex justify-between p-2 bg-gray-50 rounded">
-                    <span>Adult Ticket:</span>
-                    <span className="font-medium">
-                      ${ticketPrices.adult.toFixed(2)}
-                    </span>
-                  </div>
-                  <div className="flex justify-between p-2 bg-gray-50 rounded">
-                    <span>Child Ticket:</span>
-                    <span className="font-medium">
-                      ${ticketPrices.child.toFixed(2)}
-                    </span>
-                  </div>
-                  <div className="flex justify-between p-2 bg-gray-50 rounded">
-                    <span>Senior Ticket:</span>
-                    <span className="font-medium">
-                      ${ticketPrices.senior.toFixed(2)}
-                    </span>
-                  </div>
-                  <div className="flex justify-between p-2 bg-gray-50 rounded">
-                    <span>Student Ticket:</span>
-                    <span className="font-medium">
-                      ${ticketPrices.student.toFixed(2)}
-                    </span>
-                  </div>
-                </div>
-              </div>
-              <div>
-                <h4 className="font-semibold mb-3">Membership Price</h4>
-                <div className="flex justify-between p-2 bg-gray-50 rounded">
-                  <span>Annual Membership:</span>
-                  <span className="font-medium">
-                    ${membershipPrice.toFixed(2)}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </main>
-
-      {/* Delete Employee Confirmation */}
-      <AlertDialog
-        open={deleteConfirmEmployee !== null}
-        onOpenChange={() => setDeleteConfirmEmployee(null)}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete Employee</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to remove{" "}
-              {deleteConfirmEmployee?.First_Name}{" "}
-              {deleteConfirmEmployee?.Last_Name} from the system? This action
-              cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel className="cursor-pointer">
-              Cancel
-            </AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() =>
-                deleteConfirmEmployee &&
-                handleDeleteEmployee(deleteConfirmEmployee)
-              }
-              className="bg-red-600 hover:bg-red-700 cursor-pointer"
-            >
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* Delete Animal Confirmation */}
-      <AlertDialog
-        open={deleteConfirmAnimal !== null}
-        onOpenChange={() => setDeleteConfirmAnimal(null)}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete Animal</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to remove {deleteConfirmAnimal?.Animal_Name}{" "}
-              from the zoo? This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel className="cursor-pointer">
-              Cancel
-            </AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() =>
-                deleteConfirmAnimal && handleDeleteAnimal(deleteConfirmAnimal)
-              }
-              className="bg-red-600 hover:bg-red-700 cursor-pointer"
-            >
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* Manage Zone Dialog */}
-      <Dialog open={isManageZoneOpen} onOpenChange={setIsManageZoneOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Manage Zone {selectedZone?.Zone}</DialogTitle>
-            <DialogDescription>
-              Assign or change the supervisor for this zone
-            </DialogDescription>
-          </DialogHeader>
-          <ManageZoneForm
-            zone={selectedZone}
-            employees={allEmployees}
-            onSave={handleManageZone}
-            onCancel={() => setIsManageZoneOpen(false)}
-          />
-        </DialogContent>
-      </Dialog>
-
-      {/* View Zone Employees Dialog */}
-      <Dialog
-        open={viewZoneEmployees !== null}
-        onOpenChange={() => setViewZoneEmployees(null)}
-      >
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Zone {viewZoneEmployees?.Zone} Employees</DialogTitle>
-            <DialogDescription>
-              All employees working in this zone
-            </DialogDescription>
-          </DialogHeader>
-          <ScrollArea className="max-h-[60vh] pr-4">
-            <div className="space-y-3">
-              {viewZoneEmployees &&
-                allEmployees
-                  .filter((e) => {
-                    if (e.Employee_ID === viewZoneEmployees.Supervisor_ID)
-                      return true;
-                    const supervisor = allEmployees.find(
-                      (s) => s.Employee_ID === e.Supervisor_ID
-                    );
-                    return (
-                      supervisor &&
-                      supervisor.Employee_ID === viewZoneEmployees.Supervisor_ID
-                    );
-                  })
-                  .map((emp) => (
-                    <div
-                      key={emp.Employee_ID}
-                      className="p-3 bg-gray-50 rounded-lg"
-                    >
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="font-medium">
-                            {emp.First_Name} {emp.Last_Name}
-                          </p>
-                          <div className="flex items-center gap-2 mt-1">
-                            <Badge variant="secondary" className="text-xs">
-                              {jobTitles.find(
-                                (j) => j.Position_ID === emp.Position_ID
-                              )?.Title || "Unknown"}
-                            </Badge>
-                            {emp.Employee_ID ===
-                              viewZoneEmployees.Supervisor_ID && (
-                              <Badge className="text-xs bg-teal-600">
-                                Supervisor
-                              </Badge>
-                            )}
-                          </div>
-                          <p className="text-sm text-gray-600 mt-1">
-                            ${formatNumber(emp.Salary)}/year
-                          </p>
+            {/* Current Supervisor Display */}
+            {selectedZone &&
+              (() => {
+                const currentSupervisor = allEmployees.find(
+                  (e) => e.Employee_ID === selectedZone.Supervisor_ID
+                );
+                return currentSupervisor ? (
+                  <div className="p-4 bg-purple-100 border-2 border-purple-300 rounded-lg">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm text-gray-600 mb-1">
+                          Current Supervisor
+                        </p>
+                        <p className="font-medium text-lg">
+                          {currentSupervisor.Last_Name},{" "}
+                          {currentSupervisor.First_Name}
+                        </p>
+                        <div className="flex items-center gap-6 text-sm text-gray-600 mt-1">
+                          <span>ID: {currentSupervisor.Employee_ID}</span>
+                          <span>Sex: {currentSupervisor.Sex}</span>
+                          <span>
+                            DOB: {formatDate(currentSupervisor.Birthdate)}
+                          </span>
                         </div>
                       </div>
+                      <Button
+                        variant="outline"
+                        className="bg-red-50 border-red-300 text-red-600 hover:bg-red-100 cursor-pointer"
+                        onClick={() =>
+                          handleAssignSupervisor(selectedZone.Location_ID, null)
+                        }
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
                     </div>
-                  ))}
-            </div>
-          </ScrollArea>
-        </DialogContent>
-      </Dialog>
+                  </div>
+                ) : (
+                  <div className="p-4 bg-gray-100 border-2 border-gray-300 rounded-lg">
+                    <p className="text-gray-600 text-center">
+                      No supervisor currently assigned
+                    </p>
+                  </div>
+                );
+              })()}
 
-      {/* Salary Management Dialog */}
-      <Dialog
-        open={isSalaryManagementOpen}
-        onOpenChange={setIsSalaryManagementOpen}
-      >
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Manage Salaries</DialogTitle>
-            <DialogDescription>
-              Adjust annual salary for each job role (affects all employees in
-              that role)
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            {Object.entries(tempSalaries).map(([positionId, salary]) => {
-              const jobTitle = jobTitles.find(
-                (j) => j.Position_ID === parseInt(positionId)
-              );
-              return (
-                <div key={positionId}>
-                  <Label
-                    htmlFor={`salary-${positionId}`}
-                    className="mb-2 block"
-                  >
-                    {jobTitle?.Title}
-                  </Label>
-                  <div className="flex items-center gap-2">
-                    <span className="text-gray-600">$</span>
-                    <Input
-                      id={`salary-${positionId}`}
-                      type="number"
-                      value={salary}
-                      onChange={(e) =>
-                        setTempSalaries({
-                          ...tempSalaries,
-                          [positionId]: parseInt(e.target.value) || 0,
-                        })
-                      }
-                      className="flex-1"
-                    />
-                    <span className="text-gray-600 text-sm">/year</span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-          <div className="flex gap-2">
-            <Button
-              onClick={handleSaveSalaries}
-              className="flex-1 bg-teal-600 hover:bg-teal-700 cursor-pointer"
-            >
-              Save Changes
-            </Button>
-            <Button
-              variant="outline"
-              onClick={handleCancelSalaryChanges}
-              className="flex-1 cursor-pointer"
-            >
-              Cancel
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Pricing Management Dialog */}
-      <Dialog
-        open={isPricingManagementOpen}
-        onOpenChange={setIsPricingManagementOpen}
-      >
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Manage Pricing</DialogTitle>
-            <DialogDescription>
-              Adjust ticket and membership prices
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div>
-              <h4 className="font-semibold mb-3">Ticket Prices</h4>
-              <div className="space-y-3">
-                <div>
-                  <Label htmlFor="adult-ticket">Adult Ticket</Label>
-                  <div className="flex items-center gap-2">
-                    <span className="text-gray-600">$</span>
-                    <Input
-                      id="adult-ticket"
-                      type="number"
-                      step="0.01"
-                      value={tempTicketPrices.adult}
-                      onChange={(e) =>
-                        setTempTicketPrices({
-                          ...tempTicketPrices,
-                          adult: parseFloat(e.target.value) || 0,
-                        })
-                      }
-                      className="flex-1"
-                    />
-                  </div>
-                </div>
-                <div>
-                  <Label htmlFor="child-ticket">Child Ticket</Label>
-                  <div className="flex items-center gap-2">
-                    <span className="text-gray-600">$</span>
-                    <Input
-                      id="child-ticket"
-                      type="number"
-                      step="0.01"
-                      value={tempTicketPrices.child}
-                      onChange={(e) =>
-                        setTempTicketPrices({
-                          ...tempTicketPrices,
-                          child: parseFloat(e.target.value) || 0,
-                        })
-                      }
-                      className="flex-1"
-                    />
-                  </div>
-                </div>
-                <div>
-                  <Label htmlFor="senior-ticket">Senior Ticket</Label>
-                  <div className="flex items-center gap-2">
-                    <span className="text-gray-600">$</span>
-                    <Input
-                      id="senior-ticket"
-                      type="number"
-                      step="0.01"
-                      value={tempTicketPrices.senior}
-                      onChange={(e) =>
-                        setTempTicketPrices({
-                          ...tempTicketPrices,
-                          senior: parseFloat(e.target.value) || 0,
-                        })
-                      }
-                      className="flex-1"
-                    />
-                  </div>
-                </div>
-                <div>
-                  <Label htmlFor="student-ticket">Student Ticket</Label>
-                  <div className="flex items-center gap-2">
-                    <span className="text-gray-600">$</span>
-                    <Input
-                      id="student-ticket"
-                      type="number"
-                      step="0.01"
-                      value={tempTicketPrices.student}
-                      onChange={(e) =>
-                        setTempTicketPrices({
-                          ...tempTicketPrices,
-                          student: parseFloat(e.target.value) || 0,
-                        })
-                      }
-                      className="flex-1"
-                    />
-                  </div>
-                </div>
-              </div>
+            {/* Search Bar */}
+            <div className="relative mt-4">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <Input
+                placeholder="Search by name or ID..."
+                value={supervisorSearch}
+                onChange={(e) => setSupervisorSearch(e.target.value)}
+                className="pl-10"
+              />
             </div>
-            <div>
-              <h4 className="font-semibold mb-3">Membership Price</h4>
-              <div>
-                <Label htmlFor="membership-price">Annual Membership</Label>
-                <div className="flex items-center gap-2">
-                  <span className="text-gray-600">$</span>
-                  <Input
-                    id="membership-price"
-                    type="number"
-                    step="0.01"
-                    value={tempMembershipPrice}
-                    onChange={(e) =>
-                      setTempMembershipPrice(parseFloat(e.target.value) || 0)
+
+            <ScrollArea className="max-h-[400px] pr-4">
+              <div className="space-y-2">
+                {/* Employee List */}
+                <p className="text-sm text-gray-600 mb-2 px-1">
+                  Select new supervisor:
+                </p>
+                {filteredEmployeesForSupervisor.map((employee) => (
+                  <button
+                    key={employee.Employee_ID}
+                    className="w-full p-4 border rounded-lg text-left hover:bg-purple-50 transition-colors cursor-pointer"
+                    onClick={() =>
+                      selectedZone &&
+                      handleAssignSupervisor(
+                        selectedZone.Location_ID,
+                        employee.Employee_ID
+                      )
                     }
-                    className="flex-1"
-                  />
-                </div>
+                  >
+                    <div className="flex items-center justify-between gap-4">
+                      <p className="font-medium flex-shrink-0">
+                        {employee.Last_Name}, {employee.First_Name}
+                      </p>
+                      <div className="flex items-center gap-6 text-sm text-gray-600">
+                        <span>ID: {employee.Employee_ID}</span>
+                        <span>Sex: {employee.Sex}</span>
+                        <span>DOB: {formatDate(employee.Birthdate)}</span>
+                      </div>
+                    </div>
+                  </button>
+                ))}
+
+                {filteredEmployeesForSupervisor.length === 0 &&
+                  supervisorSearch && (
+                    <div className="text-center py-8 text-gray-500">
+                      No employees found matching "{supervisorSearch}"
+                    </div>
+                  )}
               </div>
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <Button
-              onClick={handleSavePricing}
-              className="flex-1 bg-teal-600 hover:bg-teal-700 cursor-pointer"
-            >
-              Save Changes
-            </Button>
-            <Button
-              variant="outline"
-              onClick={handleCancelPricingChanges}
-              className="flex-1 cursor-pointer"
-            >
-              Cancel
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+            </ScrollArea>
+          </DialogContent>
+        </Dialog>
 
-      {/* Add Animal Dialog */}
-      <AddAnimalDialog
-        isOpen={isAddAnimalOpen}
-        onOpenChange={setIsAddAnimalOpen}
-        onAdd={handleAddAnimal}
-        enclosures={enclosures}
-      />
+        {/* Delete Confirmation Dialog */}
+        <AlertDialog
+          open={deleteConfirmEmployee !== null}
+          onOpenChange={() => setDeleteConfirmEmployee(null)}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete Employee</AlertDialogTitle>
+              <AlertDialogDescription>
+                Are you sure you want to delete{" "}
+                <strong>
+                  {deleteConfirmEmployee?.First_Name}{" "}
+                  {deleteConfirmEmployee?.Last_Name}
+                </strong>{" "}
+                from the system? This action cannot be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel className="cursor-pointer">
+                Cancel
+              </AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() =>
+                  deleteConfirmEmployee &&
+                  handleDeleteEmployee(deleteConfirmEmployee)
+                }
+                className="bg-red-600 hover:bg-red-700 cursor-pointer"
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                Delete Employee
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
-      {/* Edit Animal Dialog */}
-      <EditAnimalDialog
-        animal={editingAnimal}
-        isOpen={editingAnimal !== null}
-        onOpenChange={() => setEditingAnimal(null)}
-        onUpdate={handleUpdateAnimal}
-        onDelete={(animal) => {
-          setEditingAnimal(null);
-          setDeleteConfirmAnimal(animal);
-        }}
-        enclosures={enclosures}
-      />
+        {/* Edit Animal Dialog */}
+        <EditAnimalDialog
+          animal={editingAnimal}
+          isOpen={editingAnimal !== null}
+          onOpenChange={(open) => !open && setEditingAnimal(null)}
+          onUpdate={handleUpdateAnimal}
+          onDelete={(animal) => {
+            setEditingAnimal(null);
+            setDeleteConfirmAnimal(animal);
+          }}
+          enclosures={enclosures}
+        />
+
+        {/* Delete Animal Confirmation Dialog */}
+        <AlertDialog
+          open={deleteConfirmAnimal !== null}
+          onOpenChange={() => setDeleteConfirmAnimal(null)}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete Animal</AlertDialogTitle>
+              <AlertDialogDescription>
+                Are you sure you want to delete{" "}
+                <strong>{deleteConfirmAnimal?.Animal_Name}</strong> (
+                {deleteConfirmAnimal?.Species}) from the zoo? This action cannot
+                be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel className="cursor-pointer">
+                Cancel
+              </AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() =>
+                  deleteConfirmAnimal && handleDeleteAnimal(deleteConfirmAnimal)
+                }
+                className="bg-red-600 hover:bg-red-700 cursor-pointer"
+              >
+                <PawPrint className="h-4 w-4 mr-2" />
+                Delete Animal
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </div>
     </div>
   );
 }
 
 // Add Employee Dialog Component
-function AddEmployeeDialog({ onAdd, employees, jobTitles, locations }) {
+function AddEmployeeDialog({
+  isOpen,
+  onOpenChange,
+  onAdd,
+  allEmployees,
+  salaries,
+}) {
   const [formData, setFormData] = useState({
     firstName: "",
     lastName: "",
-    jobTitleId: "4",
-    supervisorId: "",
-    hireDate: new Date().toISOString().split("T")[0],
+    birthdate: "",
+    sex: "M",
+    jobId: "3",
     email: "",
+    address: "",
   });
-
-  const [supervisorSearch, setSupervisorSearch] = useState("");
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -1374,234 +1622,146 @@ function AddEmployeeDialog({ onAdd, employees, jobTitles, locations }) {
     setFormData({
       firstName: "",
       lastName: "",
-      jobTitleId: "4",
-      supervisorId: "",
-      hireDate: new Date().toISOString().split("T")[0],
+      birthdate: "",
+      sex: "M",
+      jobId: "3",
       email: "",
+      address: "",
     });
-    setSupervisorSearch("");
   };
 
-  // Filter supervisors based on search
-  const filteredSupervisors = employees.filter((emp) => {
-    const isSupervisor = locations.some(
-      (loc) => loc.Supervisor_ID === emp.Employee_ID
-    );
-    if (!isSupervisor) return false;
-
-    const searchTerm = supervisorSearch.toLowerCase();
-    return (
-      emp.First_Name.toLowerCase().includes(searchTerm) ||
-      emp.Last_Name.toLowerCase().includes(searchTerm)
-    );
-  });
-
   return (
-    <DialogContent className="max-w-2xl">
-      <DialogHeader>
-        <DialogTitle>Add New Employee</DialogTitle>
-        <DialogDescription>
-          Enter the new employee's information below.
-        </DialogDescription>
-      </DialogHeader>
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <Label htmlFor="firstName">First Name *</Label>
-            <Input
-              id="firstName"
-              value={formData.firstName}
-              onChange={(e) =>
-                setFormData({ ...formData, firstName: e.target.value })
-              }
-              required
-            />
-          </div>
-          <div>
-            <Label htmlFor="lastName">Last Name *</Label>
-            <Input
-              id="lastName"
-              value={formData.lastName}
-              onChange={(e) =>
-                setFormData({ ...formData, lastName: e.target.value })
-              }
-              required
-            />
-          </div>
-        </div>
-        <div>
-          <Label htmlFor="email">Email *</Label>
-          <Input
-            id="email"
-            type="email"
-            value={formData.email}
-            onChange={(e) =>
-              setFormData({ ...formData, email: e.target.value })
-            }
-            required
-          />
-        </div>
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <Label htmlFor="jobTitle">Job Title *</Label>
-            <Select
-              value={formData.jobTitleId}
-              onValueChange={(value) =>
-                setFormData({ ...formData, jobTitleId: value })
-              }
-            >
-              <SelectTrigger className="cursor-pointer">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {jobTitles
-                  .filter((j) => j.Job_ID !== 1)
-                  .map((job) => (
-                    <SelectItem key={job.Job_ID} value={String(job.Job_ID)}>
-                      {job.Title}
-                    </SelectItem>
-                  ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div>
-            <Label htmlFor="hireDate">Hire Date *</Label>
-            <Input
-              id="hireDate"
-              type="date"
-              value={formData.hireDate}
-              onChange={(e) =>
-                setFormData({ ...formData, hireDate: e.target.value })
-              }
-              required
-            />
-          </div>
-        </div>
-        <div>
-          <Label htmlFor="supervisor">Supervisor (Optional)</Label>
-          <div className="space-y-2">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-              <Input
-                id="supervisorSearch"
-                placeholder="Search supervisors..."
-                value={supervisorSearch}
-                onChange={(e) => setSupervisorSearch(e.target.value)}
-                className="pl-10"
-              />
-            </div>
-            <Select
-              value={formData.supervisorId}
-              onValueChange={(value) =>
-                setFormData({ ...formData, supervisorId: value })
-              }
-            >
-              <SelectTrigger className="cursor-pointer">
-                <SelectValue placeholder="Select a supervisor (optional)" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="">None</SelectItem>
-                {filteredSupervisors.map((sup) => {
-                  const zone = locations.find(
-                    (loc) => loc.Supervisor_ID === sup.Employee_ID
-                  );
-                  return (
-                    <SelectItem
-                      key={sup.Employee_ID}
-                      value={sup.Employee_ID.toString()}
-                    >
-                      {sup.First_Name} {sup.Last_Name} (Zone {zone?.Zone})
-                    </SelectItem>
-                  );
-                })}
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-        <Button
-          type="submit"
-          className="w-full bg-teal-600 hover:bg-teal-700 cursor-pointer"
-        >
+    <Dialog open={isOpen} onOpenChange={onOpenChange}>
+      <DialogTrigger asChild>
+        <Button className="bg-green-600 hover:bg-green-700 cursor-pointer">
+          <UserPlus className="h-4 w-4 mr-2" />
           Add Employee
         </Button>
-      </form>
-    </DialogContent>
-  );
-}
-
-// Manage Zone Form Component
-function ManageZoneForm({ zone, employees, onSave, onCancel }) {
-  const [supervisorId, setSupervisorId] = useState(
-    zone?.Supervisor_ID?.toString() || ""
-  );
-  const [supervisorSearch, setSupervisorSearch] = useState("");
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    onSave(zone, supervisorId);
-  };
-
-  // Filter available supervisors (employees with Position_ID 2)
-  const availableSupervisors = employees.filter((emp) => {
-    const searchTerm = supervisorSearch.toLowerCase();
-    return (
-      emp.Job_ID === 2 &&
-      (emp.First_Name.toLowerCase().includes(searchTerm) ||
-        emp.Last_Name.toLowerCase().includes(searchTerm))
-    );
-  });
-
-  return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      <div>
-        <Label htmlFor="zoneSearch">Search Supervisors</Label>
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-          <Input
-            id="zoneSearch"
-            placeholder="Search by name..."
-            value={supervisorSearch}
-            onChange={(e) => setSupervisorSearch(e.target.value)}
-            className="pl-10"
-          />
-        </div>
-      </div>
-      <div>
-        <Label htmlFor="zoneSupervisor">Assign Supervisor</Label>
-        <Select value={supervisorId} onValueChange={setSupervisorId}>
-          <SelectTrigger className="cursor-pointer">
-            <SelectValue placeholder="Select a supervisor" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="">Unassigned</SelectItem>
-            {availableSupervisors.map((emp) => (
-              <SelectItem
-                key={emp.Employee_ID}
-                value={emp.Employee_ID.toString()}
+      </DialogTrigger>
+      <DialogContent className="max-w-2xl max-h-[90vh]">
+        <DialogHeader>
+          <DialogTitle>Add New Employee</DialogTitle>
+          <DialogDescription>
+            Add a new employee to the WildWood Zoo staff. Salary will be set
+            based on job type.
+          </DialogDescription>
+        </DialogHeader>
+        <ScrollArea className="max-h-[70vh] pr-4">
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="firstName">First Name *</Label>
+                <Input
+                  id="firstName"
+                  value={formData.firstName}
+                  onChange={(e) =>
+                    setFormData({ ...formData, firstName: e.target.value })
+                  }
+                  required
+                />
+              </div>
+              <div>
+                <Label htmlFor="lastName">Last Name *</Label>
+                <Input
+                  id="lastName"
+                  value={formData.lastName}
+                  onChange={(e) =>
+                    setFormData({ ...formData, lastName: e.target.value })
+                  }
+                  required
+                />
+              </div>
+            </div>
+            <div>
+              <Label htmlFor="email">Email *</Label>
+              <Input
+                id="email"
+                type="email"
+                value={formData.email}
+                onChange={(e) =>
+                  setFormData({ ...formData, email: e.target.value })
+                }
+                required
+              />
+            </div>
+            <div>
+              <Label htmlFor="jobId">Job Title *</Label>
+              <Select
+                value={formData.jobId}
+                onValueChange={(value) =>
+                  setFormData({ ...formData, jobId: value })
+                }
               >
-                {emp.First_Name} {emp.Last_Name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-      <div className="flex gap-2">
-        <Button
-          type="submit"
-          className="flex-1 bg-teal-600 hover:bg-teal-700 cursor-pointer"
-        >
-          Save Changes
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          onClick={onCancel}
-          className="flex-1 cursor-pointer"
-        >
-          Cancel
-        </Button>
-      </div>
-    </form>
+                <SelectTrigger className="cursor-pointer">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {jobTitles
+                    .filter((j) => j.Job_ID !== 1)
+                    .map((job) => (
+                      <SelectItem
+                        key={job.Job_ID}
+                        value={job.Job_ID.toString()}
+                      >
+                        {job.Title}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="birthdate">Birthdate *</Label>
+                <Input
+                  id="birthdate"
+                  type="date"
+                  value={formData.birthdate}
+                  onChange={(e) =>
+                    setFormData({ ...formData, birthdate: e.target.value })
+                  }
+                  required
+                />
+              </div>
+              <div>
+                <Label htmlFor="sex">Sex *</Label>
+                <Select
+                  value={formData.sex}
+                  onValueChange={(value) =>
+                    setFormData({ ...formData, sex: value })
+                  }
+                >
+                  <SelectTrigger className="cursor-pointer">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="M">Male</SelectItem>
+                    <SelectItem value="F">Female</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div>
+              <Label htmlFor="address">Address *</Label>
+              <Input
+                id="address"
+                placeholder="123 Main St, City, State ZIP"
+                value={formData.address}
+                onChange={(e) =>
+                  setFormData({ ...formData, address: e.target.value })
+                }
+                required
+              />
+            </div>
+            <Button
+              type="submit"
+              className="w-full bg-green-600 hover:bg-green-700 cursor-pointer"
+            >
+              Add Employee
+            </Button>
+          </form>
+        </ScrollArea>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -1631,11 +1791,17 @@ function AddAnimalDialog({ isOpen, onOpenChange, onAdd, enclosures }) {
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
+      <DialogTrigger asChild>
+        <Button className="bg-teal-600 hover:bg-teal-700 cursor-pointer">
+          <Plus className="h-4 w-4 mr-2" />
+          Add Animal
+        </Button>
+      </DialogTrigger>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>Add New Animal</DialogTitle>
           <DialogDescription>
-            Enter the new animal's information below.
+            Add a new animal to the WildWood Zoo collection.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">

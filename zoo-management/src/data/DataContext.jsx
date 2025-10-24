@@ -10,11 +10,16 @@
  * across all pages and portals in real-time.
  */
 
-import { createContext, useContext, useState } from "react";
+import { createContext, useContext, useState, ReactNode } from "react";
 import {
   animals as initialAnimals,
   items as initialItems,
   concessionItems as initialConcessionItems,
+  purchases as initialPurchases,
+  tickets as initialTickets,
+  purchaseItems as initialPurchaseItems,
+  purchaseConcessionItems as initialPurchaseConcessionItems,
+  memberships as initialMemberships,
 } from "./mockData";
 
 const DataContext = createContext(undefined);
@@ -25,6 +30,13 @@ export function DataProvider({ children }) {
   const [concessionItems, setConcessionItems] = useState(
     initialConcessionItems
   );
+  const [purchases, setPurchases] = useState(initialPurchases);
+  const [tickets, setTickets] = useState(initialTickets);
+  const [purchaseItems, setPurchaseItems] = useState(initialPurchaseItems);
+  const [purchaseConcessionItems, setPurchaseConcessionItems] = useState(
+    initialPurchaseConcessionItems
+  );
+  const [memberships, setMemberships] = useState(initialMemberships);
 
   // Animal operations
   const addAnimal = (animal) => {
@@ -81,6 +93,41 @@ export function DataProvider({ children }) {
     );
   };
 
+  // Purchase operations
+  const addPurchase = (purchase) => {
+    setPurchases((prev) => [...prev, purchase]);
+  };
+
+  // Ticket operations
+  const addTicket = (ticket) => {
+    setTickets((prev) => [...prev, ticket]);
+  };
+
+  // Purchase item operations
+  const addPurchaseItem = (purchaseItem) => {
+    setPurchaseItems((prev) => [...prev, purchaseItem]);
+  };
+
+  // Purchase concession item operations
+  const addPurchaseConcessionItem = (purchaseConcessionItem) => {
+    setPurchaseConcessionItems((prev) => [...prev, purchaseConcessionItem]);
+  };
+
+  // Membership operations
+  const addMembership = (membership) => {
+    setMemberships((prev) => [...prev, membership]);
+  };
+
+  const updateMembership = (customerId, updates) => {
+    setMemberships((prev) =>
+      prev.map((membership) =>
+        membership.Customer_ID === customerId
+          ? { ...membership, ...updates }
+          : membership
+      )
+    );
+  };
+
   return (
     <DataContext.Provider
       value={{
@@ -96,6 +143,17 @@ export function DataProvider({ children }) {
         addConcessionItem,
         updateConcessionItem,
         deleteConcessionItem,
+        purchases,
+        addPurchase,
+        tickets,
+        addTicket,
+        purchaseItems,
+        addPurchaseItem,
+        purchaseConcessionItems,
+        addPurchaseConcessionItem,
+        memberships,
+        addMembership,
+        updateMembership,
       }}
     >
       {children}

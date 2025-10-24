@@ -16,7 +16,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "../components/ui/alert-dialog";
+} from "../components/ui/alert-dialog.jsx";
 import {
   ShoppingCart,
   Trash2,
@@ -25,9 +25,11 @@ import {
   Crown,
   CheckCircle2,
 } from "lucide-react";
-import { currentUser, memberships, purchases } from "../data/mockData";
+import { currentUser } from "../data/mockData";
 import { Badge } from "../components/ui/badge";
 import { toast } from "sonner@2.0.3";
+import { useData } from "../data/DataContext";
+import { usePricing } from "../data/PricingContext";
 
 export function CartPage({
   cart,
@@ -36,6 +38,16 @@ export function CartPage({
   clearCart,
   onNavigate,
 }) {
+  const {
+    purchases,
+    addPurchase,
+    addTicket,
+    addPurchaseItem,
+    addPurchaseConcessionItem,
+    memberships,
+    addMembership,
+    updateMembership,
+  } = useData();
   const [itemToRemove, setItemToRemove] = useState(null);
   const [showClearDialog, setShowClearDialog] = useState(false);
   const [showCheckoutDialog, setShowCheckoutDialog] = useState(false);
@@ -56,7 +68,7 @@ export function CartPage({
   // Apply 10% member discount to items and food (not tickets or memberships)
   const memberDiscount = hasMembership
     ? cart
-        .filter((item) => item.id < 9000)
+        .filter((item) => item.id < 9000 && item.type !== "ticket")
         .reduce((sum, item) => sum + item.price * item.quantity * 0.1, 0)
     : 0;
 
@@ -103,80 +115,122 @@ export function CartPage({
       return;
     }
 
-    // Check if membership is in cart (ID 9000)
     const hasMembershipInCart = cart.some((item) => item.id === 9000);
-
-    // Create new purchase record
     const newPurchaseId =
-      Math.max(...purchases.map((p) => p.Purchase_ID), 0) + 1;
-
-    // Get customer-specific purchase number (incremental per customer)
-    const customerPurchases = purchases.filter(
+      Math.max(...(purchases?.map((p) => p.Purchase_ID) ?? [0]), 0) + 1;
+    const customerPurchases = purchases?.filter(
       (p) => p.Customer_ID === currentUser.Customer_ID
-    );
+    ) ?? [];
     const customerPurchaseNumber = customerPurchases.length + 1;
+
+    let purchaseDateTime = new Date();
+
+    if (customerPurchases.length > 0) {
+      const mostRecentPurchase = customerPurchases.reduce((latest, current) => {
+        const latestTime = new Date(latest.Purchase_Date).getTime();
+        const currentTime = new Date(current.Purchase_Date).getTime();
+        return currentTime > latestTime ? current : latest;
+      });
+
+      const mostRecentTime = new Date(
+        mostRecentPurchase.Purchase_Date
+      ).getTime();
+      const currentTime = purchaseDateTime.getTime();
+
+      if (currentTime <= mostRecentTime) {
+        purchaseDateTime = new Date(mostRecentTime + 1000);
+      }
+    }
+
+    const formatDateTime = (date) => {
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, "0");
+      const day = String(date.getDate()).padStart(2, "0");
+      const hours = String(date.getHours()).padStart(2, "0");
+      const minutes = String(date.getMinutes()).padStart(2, "0");
+      const seconds = String(date.getSeconds()).padStart(2, "0");
+      return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+    };
 
     const newPurchase = {
       Purchase_ID: newPurchaseId,
+      Customer_ID: currentUser.Customer_ID,
+      Purchase_Date: formatDateTime(purchaseDateTime),
       Total_Amount: total,
       Payment_Method: "Card",
-      Purchase_Date: new Date().toISOString().replace("T", " ").split(".")[0],
-      Customer_ID: currentUser.Customer_ID,
-      Membership_ID: null,
     };
 
-    // Add to purchases array
-    purchases.push(newPurchase);
+    addPurchase(newPurchase);
 
-    // Handle membership purchase
+    cart.forEach((item) => {
+      if (item.type === "ticket") {
+        for (let i = 0; i < item.quantity; i++) {
+          const newTicketId =
+            Math.max(
+              0,
+              ...purchases.flatMap((p) =>
+                purchases.filter((px) => px.Purchase_ID === p.Purchase_ID)
+                  .length > 0
+                  ? [p.Purchase_ID]
+                  : []
+              )
+            ) +
+            1 +
+            i;
+
+          addTicket({
+            Ticket_ID: newTicketId,
+            Purchase_ID: newPurchaseId,
+            Ticket_Type: item.name,
+            Issue_Date: formatDateTime(purchaseDateTime),
+            Expiration_Date: formatDateTime(
+              new Date(purchaseDateTime.getTime() + 365 * 24 * 60 * 60 * 1000)
+            ),
+          });
+        }
+      } else if (item.type === "item") {
+        addPurchaseItem({
+          Purchase_ID: newPurchaseId,
+          Item_ID: item.id,
+          Quantity: item.quantity,
+        });
+      } else if (item.type === "food") {
+        addPurchaseConcessionItem({
+          Purchase_ID: newPurchaseId,
+          Item_ID: item.id,
+          Quantity: item.quantity,
+        });
+      }
+    });
+
     if (hasMembershipInCart) {
       const existingMembership = memberships.find(
         (m) => m.Customer_ID === currentUser.Customer_ID
       );
 
       if (existingMembership) {
-        // Extend membership by 1 year (365 days)
-        const currentEndDate = new Date(existingMembership.End_Date);
-        const today = new Date();
-
-        // If membership is expired, extend from today; otherwise extend from current end date
-        const baseDate = currentEndDate < today ? today : currentEndDate;
-        const newEndDate = new Date(baseDate);
-        newEndDate.setDate(newEndDate.getDate() + 365);
-
-        existingMembership.End_Date = newEndDate.toISOString().split("T")[0];
-        existingMembership.Membership_Status = true;
-        existingMembership.Last_Renewal_Date = new Date()
-          .toISOString()
-          .split("T")[0];
-        existingMembership.Total_Renewals += 1;
-
-        const action = currentEndDate < today ? "renewed" : "extended";
-        toast.success(
-          `Membership ${action}! New expiration: ${newEndDate.toLocaleDateString()}`
-        );
-      } else {
-        // Create new membership
-        const startDate = new Date();
-        const endDate = new Date();
-        endDate.setDate(startDate.getDate() + 365);
-
-        const newMembership = {
-          Customer_ID: currentUser.Customer_ID,
-          Price: cart.find((item) => item.id === 9000)?.price || 149.99,
-          Start_Date: startDate.toISOString().split("T")[0],
-          End_Date: endDate.toISOString().split("T")[0],
+        updateMembership(existingMembership.Membership_ID, {
           Membership_Status: true,
-          Last_Renewal_Date: startDate.toISOString().split("T")[0],
-          Total_Renewals: 0,
-        };
-
-        memberships.push(newMembership);
-        toast.success("Welcome to WildWood Zoo Membership!");
+          Start_Date: formatDateTime(purchaseDateTime),
+          Expiration_Date: formatDateTime(
+            new Date(purchaseDateTime.getTime() + 365 * 24 * 60 * 60 * 1000)
+          ),
+        });
+      } else {
+        const newMembershipId =
+          Math.max(...memberships.map((m) => m.Membership_ID), 0) + 1;
+        addMembership({
+          Membership_ID: newMembershipId,
+          Customer_ID: currentUser.Customer_ID,
+          Membership_Status: true,
+          Start_Date: formatDateTime(purchaseDateTime),
+          Expiration_Date: formatDateTime(
+            new Date(purchaseDateTime.getTime() + 365 * 24 * 60 * 60 * 1000)
+          ),
+        });
       }
     }
 
-    // Clear cart and show success
     clearCart();
     setShowCheckoutDialog(false);
     toast.success(`Purchase confirmed! Order #${customerPurchaseNumber}`);
@@ -184,7 +238,6 @@ export function CartPage({
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Hero Section */}
       <section className="bg-gradient-to-br from-green-600 to-emerald-700 text-white py-16">
         <div className="container mx-auto px-6">
           <h1 className="text-4xl md:text-5xl mb-4">Shopping Cart</h1>
@@ -194,11 +247,9 @@ export function CartPage({
         </div>
       </section>
 
-      {/* Cart Content */}
       <section className="py-12">
         <div className="container mx-auto px-6">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 max-w-6xl mx-auto">
-            {/* Cart Items */}
             <div className="lg:col-span-2">
               <Card>
                 <CardHeader>
@@ -220,68 +271,70 @@ export function CartPage({
                   {cart.length > 0 ? (
                     <div className="space-y-4">
                       {cart.map((item) => {
-                        const isEligibleForDiscount =
-                          hasMembership && item.id < 9000;
+                        if (
+                          !item ||
+                          item.price === undefined ||
+                          item.quantity === undefined
+                        ) {
+                          return null;
+                        }
+
                         return (
                           <div
                             key={`${item.type}-${item.id}`}
-                            className="flex gap-4 p-4 border rounded-lg hover:shadow-md transition-shadow"
+                            className="flex items-center justify-between p-4 rounded-lg bg-gray-50 border border-gray-200"
                           >
-                            {/* Item Name */}
                             <div className="flex-1">
-                              <div className="flex items-center gap-2">
-                                <h3 className="font-semibold text-gray-900">
-                                  {item.name}
-                                </h3>
-                                {isEligibleForDiscount && (
-                                  <Badge className="bg-green-100 text-green-700 border-green-300">
-                                    <Crown className="h-3 w-3 mr-1" />
-                                    10% Off
-                                  </Badge>
-                                )}
-                              </div>
+                              <h3 className="font-medium">{item.name}</h3>
                               <p className="text-sm text-gray-600">
                                 ${item.price.toFixed(2)} each
                               </p>
+                              <p className="text-xs text-gray-500 mt-1">
+                                {item.id === 9000
+                                  ? "Membership"
+                                  : item.type === "item"
+                                  ? "Gift Shop Item"
+                                  : item.type === "food"
+                                  ? "Food Item"
+                                  : "Ticket"}
+                              </p>
                             </div>
+                            <div className="flex items-center space-x-4">
+                              <div className="flex items-center space-x-2 bg-white rounded-lg border border-gray-300 px-2 py-1">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleDecreaseQuantity(item)}
+                                  className="h-6 w-6 p-0 cursor-pointer"
+                                >
+                                  <Minus className="h-3 w-3" />
+                                </Button>
+                                <span className="w-8 text-center font-medium">
+                                  {item.quantity}
+                                </span>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleIncreaseQuantity(item)}
+                                  className="h-6 w-6 p-0 cursor-pointer"
+                                >
+                                  <Plus className="h-3 w-3" />
+                                </Button>
+                              </div>
 
-                            {/* Quantity Controls */}
-                            <div className="flex items-center gap-2 border rounded-lg px-2">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleDecreaseQuantity(item)}
-                                className="h-6 w-6 p-0 cursor-pointer"
-                              >
-                                <Minus className="h-3 w-3" />
-                              </Button>
-                              <span className="w-8 text-center font-medium">
-                                {item.quantity}
+                              <span className="text-lg text-green-600 font-semibold min-w-[80px] text-right">
+                                ${(item.price * item.quantity).toFixed(2)}
                               </span>
+
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                onClick={() => handleIncreaseQuantity(item)}
-                                className="h-6 w-6 p-0 cursor-pointer"
+                                onClick={() => handleRemoveItem(item)}
+                                className="text-red-600 hover:text-red-700 hover:bg-red-50 cursor-pointer"
                               >
-                                <Plus className="h-3 w-3" />
+                                <Trash2 className="h-4 w-4" />
                               </Button>
                             </div>
-
-                            {/* Price */}
-                            <span className="text-lg text-green-600 font-semibold min-w-[80px] text-right">
-                              ${(item.price * item.quantity).toFixed(2)}
-                            </span>
-
-                            {/* Delete Button */}
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleRemoveItem(item)}
-                              className="text-red-600 hover:text-red-700 hover:bg-red-50 cursor-pointer"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
                           </div>
                         );
                       })}
@@ -302,7 +355,6 @@ export function CartPage({
               </Card>
             </div>
 
-            {/* Order Summary */}
             <div>
               <Card className="sticky top-24">
                 <CardHeader>
@@ -360,7 +412,6 @@ export function CartPage({
         </div>
       </section>
 
-      {/* Remove Item Confirmation Dialog */}
       <AlertDialog
         open={itemToRemove !== null}
         onOpenChange={() => setItemToRemove(null)}
@@ -388,7 +439,6 @@ export function CartPage({
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Clear Cart Confirmation Dialog */}
       <AlertDialog open={showClearDialog} onOpenChange={setShowClearDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -413,7 +463,6 @@ export function CartPage({
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Checkout Confirmation Dialog */}
       <AlertDialog
         open={showCheckoutDialog}
         onOpenChange={setShowCheckoutDialog}

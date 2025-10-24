@@ -5,23 +5,23 @@ import { Navigation } from "./components/Navigation";
 import { Footer } from "./components/Footer";
 
 // Pages
-import { HomePage } from "./pages/HomePage";
+import { HomePage } from "./pages/HomePage.jsx";
 import { AnimalsPage } from "./pages/AnimalsPage";
 import { AttractionsPage } from "./pages/AttractionsPage";
 import { ShopPage } from "./pages/ShopPage";
 import { FoodPage } from "./pages/FoodPage";
 import { TicketsPage } from "./pages/TicketsPage";
-import { CartPage } from "./pages/CartPage";
-import { CustomerDashboard } from "./pages/CustomerDashboard";
+import { CartPage } from "./pages/CartPage.jsx";
+import { CustomerDashboard } from "./pages/CustomerDashboard.jsx";
 import { OrderHistoryPage } from "./pages/OrderHistoryPage";
 
 // Staff Portals
-import { VeterinarianPortal } from "./pages/staff/VeterinarianPortal";
-import { ZookeeperPortal } from "./pages/staff/ZookeeperPortal";
-import { GiftShopPortal } from "./pages/staff/GiftShopPortal";
-import { ConcessionPortal } from "./pages/staff/ConcessionPortal";
-import { ManagerPortal } from "./pages/staff/ManagerPortal";
-import { AdminPortal } from "./pages/AdminPortal";
+import { VeterinarianPortal } from "./pages/staff/VeterinarianPortal.jsx";
+import { ZookeeperPortal } from "./pages/staff/ZookeeperPortal.jsx";
+import { GiftShopPortal } from "./pages/staff/GiftShopPortal.jsx";
+import { ConcessionPortal } from "./pages/staff/ConcessionPortal.jsx";
+import { ManagerPortal } from "./pages/staff/ManagerPortal.jsx";
+import { AdminPortal } from "./pages/AdminPortal.jsx";
 
 // Login
 import { LoginPage } from "./pages/LoginPage";

@@ -13,21 +13,25 @@ import {
   ChevronRight,
   UtensilsCrossed,
 } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "sonner@2.0.3";
 import {
   currentUser,
   currentUserType,
-  getCustomerMembership,
   concessionStands,
 } from "../data/mockData";
 import { useData } from "../data/DataContext";
 import { ImageWithFallback } from "../components/figma/ImageWithFallback";
 
-export function FoodPage() {
-  const { concessionItems } = useData();
+export function FoodPage({ addToCart }) {
+  const { concessionItems, memberships } = useData();
 
-  const standInfo = useMemo(
-    () => [
+  // Zone mapping based on Location_ID from concessionStands in mockData
+  // Stand 1 (Safari Grill) -> Location 1 -> Zone A
+  // Stand 2 (Polar Cafe) -> Location 4 -> Zone D
+  // Stand 3 (Rainforest Refreshments) -> Location 3 -> Zone C
+  // Stand 4 (Desert Diner) -> Location 2 -> Zone B
+  const standInfo = useMemo(() => {
+    return [
       {
         id: 1,
         name: "Safari Grill",
@@ -52,10 +56,10 @@ export function FoodPage() {
         zone: "Zone B",
         specialty: "Pizza & Italian",
       },
-    ],
-    []
-  );
+    ];
+  }, []);
 
+  // Group items by stand
   const itemsByStand = useMemo(() => {
     return standInfo.map((stand) => {
       const standItems = concessionItems.filter(
@@ -80,9 +84,13 @@ export function FoodPage() {
     "Desert Diner": 0,
   });
 
+  // Check if current user is a customer with active membership
   const hasMembership =
-    currentUser && currentUserType === "customer"
-      ? getCustomerMembership(currentUser.Customer_ID) !== null
+    currentUser && currentUserType === "customer" && memberships
+      ? memberships.some(
+          (m) =>
+            m.Customer_ID === currentUser.Customer_ID && m.Membership_Status
+        )
       : false;
 
   const handleNext = (standName, totalItems) => {
@@ -98,8 +106,6 @@ export function FoodPage() {
       [standName]: prev[standName] === 0 ? totalItems - 1 : prev[standName] - 1,
     }));
   };
-
-  const calculateDiscountedPrice = (price) => (price * 0.9).toFixed(2);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -154,6 +160,7 @@ export function FoodPage() {
                 currentIndex + 4
               );
 
+              // If we don't have 4 items, wrap around
               if (displayedItems.length < 4 && stand.items.length > 0) {
                 displayedItems.push(
                   ...stand.items.slice(0, 4 - displayedItems.length)
@@ -209,13 +216,35 @@ export function FoodPage() {
                               )}
                             </div>
                             <CardContent className="pt-4">
-                              <div className="flex flex-col gap-2">
+                              <div className="flex flex-col gap-3">
                                 <h4 className="font-medium text-lg">
                                   {item.name}
                                 </h4>
                                 <span className="text-xl text-green-600 font-semibold">
                                   ${item.price.toFixed(2)}
                                 </span>
+                                <Button
+                                  className="w-full bg-green-600 hover:bg-green-700 cursor-pointer"
+                                  onClick={() => {
+                                    if (!currentUser) {
+                                      toast.error(
+                                        "Please log in to add items to cart"
+                                      );
+                                    } else if (addToCart) {
+                                      addToCart({
+                                        id: item.id,
+                                        name: item.name,
+                                        price: item.price,
+                                        type: "food",
+                                      });
+                                      toast.success(
+                                        `Added ${item.name} to cart!`
+                                      );
+                                    }
+                                  }}
+                                >
+                                  Add to Cart
+                                </Button>
                               </div>
                             </CardContent>
                           </Card>
