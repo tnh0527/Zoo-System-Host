@@ -123,18 +123,38 @@ export function OrderHistoryPage({ user }) {
                             </p>
                             {purchaseTickets.length > 0 && (
                               <>
-                                {purchaseTickets.map((ticket) => (
-                                  <p
-                                    key={ticket.Ticket_ID}
-                                    className="text-sm text-gray-600"
-                                  >
-                                    • {ticket.Ticket_Type} Ticket (x
-                                    {ticket.Quantity}) - $
-                                    {(ticket.Price * ticket.Quantity).toFixed(
-                                      2
-                                    )}
-                                  </p>
-                                ))}
+                                {(() => {
+                                  // Group tickets by type and compute total quantity and price per type
+                                  const grouped = purchaseTickets.reduce(
+                                    (acc, t) => {
+                                      const type = t.Ticket_Type || "Unknown";
+                                      const price = Number(t.Price) || 0;
+                                      const quantity = t.Quantity || 1;
+                                      if (!acc[type])
+                                        acc[type] = {
+                                          Ticket_Type: type,
+                                          count: 0,
+                                          price,
+                                        };
+                                      acc[type].count += quantity;
+                                      // Keep the price from the ticket (assumes same price per type)
+                                      acc[type].price = price;
+                                      return acc;
+                                    },
+                                    {}
+                                  );
+
+                                  return Object.values(grouped).map((g) => (
+                                    <p
+                                      key={g.Ticket_Type}
+                                      className="text-sm text-gray-600"
+                                    >
+                                      • {g.Ticket_Type} Ticket (x{g.count}) - $
+                                      {(Number(g.price) * g.count).toFixed(2)} /
+                                      per
+                                    </p>
+                                  ));
+                                })()}
                               </>
                             )}
                             {(() => {

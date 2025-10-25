@@ -6,7 +6,6 @@ import {
   CardTitle,
 } from "../components/ui/card";
 import { Button } from "../components/ui/button";
-import { Input } from "../components/ui/input";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -27,7 +26,7 @@ import {
 } from "lucide-react";
 import { currentUser } from "../data/mockData";
 import { Badge } from "../components/ui/badge";
-import { toast } from "sonner@2.0.3";
+import { toast } from "sonner";
 import { useData } from "../data/DataContext";
 import { usePricing } from "../data/PricingContext";
 
@@ -41,6 +40,7 @@ export function CartPage({
   const {
     purchases,
     addPurchase,
+    tickets,
     addTicket,
     addPurchaseItem,
     addPurchaseConcessionItem,
@@ -48,6 +48,7 @@ export function CartPage({
     addMembership,
     updateMembership,
   } = useData();
+  const { membershipPrice } = usePricing();
   const [itemToRemove, setItemToRemove] = useState(null);
   const [showClearDialog, setShowClearDialog] = useState(false);
   const [showCheckoutDialog, setShowCheckoutDialog] = useState(false);
@@ -77,6 +78,11 @@ export function CartPage({
   const total = discountedSubtotal + tax;
 
   const handleIncreaseQuantity = (item) => {
+    // Prevent increasing membership quantity beyond 1
+    if (item.id === 9000) {
+      toast.error("You can only have one membership in the cart!");
+      return;
+    }
     updateCartQuantity(item.id, item.type, item.quantity + 1);
   };
 
@@ -118,9 +124,8 @@ export function CartPage({
     const hasMembershipInCart = cart.some((item) => item.id === 9000);
     const newPurchaseId =
       Math.max(...(purchases?.map((p) => p.Purchase_ID) ?? [0]), 0) + 1;
-    const customerPurchases = purchases?.filter(
-      (p) => p.Customer_ID === currentUser.Customer_ID
-    ) ?? [];
+    const customerPurchases =
+      purchases?.filter((p) => p.Customer_ID === currentUser.Customer_ID) ?? [];
     const customerPurchaseNumber = customerPurchases.length + 1;
 
     let purchaseDateTime = new Date();
@@ -162,43 +167,52 @@ export function CartPage({
 
     addPurchase(newPurchase);
 
+    // Prepare a starting Ticket_ID based on existing tickets so new tickets have unique IDs
+    let nextTicketId =
+      Math.max(0, ...(tickets?.map((t) => t.Ticket_ID) ?? [0])) + 1;
+
     cart.forEach((item) => {
       if (item.type === "ticket") {
-        for (let i = 0; i < item.quantity; i++) {
-          const newTicketId =
-            Math.max(
-              0,
-              ...purchases.flatMap((p) =>
-                purchases.filter((px) => px.Purchase_ID === p.Purchase_ID)
-                  .length > 0
-                  ? [p.Purchase_ID]
-                  : []
-              )
-            ) +
-            1 +
-            i;
-
-          addTicket({
-            Ticket_ID: newTicketId,
-            Purchase_ID: newPurchaseId,
-            Ticket_Type: item.name,
-            Issue_Date: formatDateTime(purchaseDateTime),
-            Expiration_Date: formatDateTime(
-              new Date(purchaseDateTime.getTime() + 365 * 24 * 60 * 60 * 1000)
-            ),
-          });
-        }
-      } else if (item.type === "item") {
-        addPurchaseItem({
+        // Create a single ticket record per ticket type with Quantity set
+        const ticketType = item.name.split(" ")[0];
+        addTicket({
+          Ticket_ID: nextTicketId++,
           Purchase_ID: newPurchaseId,
-          Item_ID: item.id,
+          Ticket_Type: ticketType,
+          Price: item.price,
           Quantity: item.quantity,
         });
+      } else if (item.type === "item") {
+        // For gift shop items (including membership item id 9000), store unit price
+        if (item.id === 9000) {
+          // Memberships should not be shown as gift shop items
+          addPurchaseItem({
+            Purchase_ID: newPurchaseId,
+            Item_ID: item.id,
+            Quantity: item.quantity,
+            Unit_Price: membershipPrice,
+          });
+        } else {
+          // Apply member discount to eligible gift shop items
+          const unitPrice = hasMembership ? item.price * 0.9 : item.price;
+          addPurchaseItem({
+            Purchase_ID: newPurchaseId,
+            Item_ID: item.id,
+            Quantity: item.quantity,
+            Unit_Price: unitPrice,
+          });
+        }
       } else if (item.type === "food") {
+        // Concession purchase items use Concession_Item_ID in the data model
+        // Apply member discount to eligible food items
+        const concessionUnitPrice = hasMembership
+          ? item.price * 0.9
+          : item.price;
         addPurchaseConcessionItem({
           Purchase_ID: newPurchaseId,
-          Item_ID: item.id,
+          Concession_Item_ID: item.id,
           Quantity: item.quantity,
+          Unit_Price: concessionUnitPrice,
         });
       }
     });
@@ -208,13 +222,33 @@ export function CartPage({
         (m) => m.Customer_ID === currentUser.Customer_ID
       );
 
+      // Compute end date by extending the later of (existing end date) or (purchase date)
+      const DAY_MS = 24 * 60 * 60 * 1000;
+      // Determine base date to extend from: if current membership end is in future, extend from that; otherwise extend from purchase time
+      let baseDate = purchaseDateTime;
+      if (existingMembership && existingMembership.End_Date) {
+        const existingEnd = new Date(existingMembership.End_Date);
+        if (
+          !isNaN(existingEnd.getTime()) &&
+          existingEnd.getTime() > purchaseDateTime.getTime()
+        ) {
+          baseDate = existingEnd;
+        }
+      }
+
+      const endDate = new Date(baseDate.getTime() + 365 * DAY_MS);
+      const endDateIso = endDate.toISOString().slice(0, 10);
+
       if (existingMembership) {
-        updateMembership(existingMembership.Membership_ID, {
+        // Preserve original Start_Date if present; otherwise set to purchase datetime
+        const startDateToUse =
+          existingMembership.Start_Date || formatDateTime(purchaseDateTime);
+        // DataContext.updateMembership expects the customerId as the first arg
+        updateMembership(existingMembership.Customer_ID, {
           Membership_Status: true,
-          Start_Date: formatDateTime(purchaseDateTime),
-          Expiration_Date: formatDateTime(
-            new Date(purchaseDateTime.getTime() + 365 * 24 * 60 * 60 * 1000)
-          ),
+          Start_Date: startDateToUse,
+          End_Date: endDateIso,
+          Price: membershipPrice,
         });
       } else {
         const newMembershipId =
@@ -224,9 +258,8 @@ export function CartPage({
           Customer_ID: currentUser.Customer_ID,
           Membership_Status: true,
           Start_Date: formatDateTime(purchaseDateTime),
-          Expiration_Date: formatDateTime(
-            new Date(purchaseDateTime.getTime() + 365 * 24 * 60 * 60 * 1000)
-          ),
+          End_Date: endDateIso,
+          Price: membershipPrice,
         });
       }
     }
@@ -292,11 +325,11 @@ export function CartPage({
                               <p className="text-xs text-gray-500 mt-1">
                                 {item.id === 9000
                                   ? "Membership"
-                                  : item.type === "item"
-                                  ? "Gift Shop Item"
+                                  : item.type === "ticket"
+                                  ? "Ticket"
                                   : item.type === "food"
                                   ? "Food Item"
-                                  : "Ticket"}
+                                  : "Gift Shop Item"}
                               </p>
                             </div>
                             <div className="flex items-center space-x-4">

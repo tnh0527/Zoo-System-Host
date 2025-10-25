@@ -74,7 +74,7 @@ import {
   PawPrint,
 } from "lucide-react";
 import { useData } from "../data/DataContext";
-import { toast } from "sonner@2.0.3";
+import { toast } from "sonner";
 import { ZooLogo } from "../components/ZooLogo";
 import { usePricing } from "../data/PricingContext";
 
@@ -206,6 +206,9 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
 
   // Helper function to get employee zone
   const getEmployeeZone = (emp) => {
+    // If employee has a direct zone assignment, show it
+    if (emp.Zone) return `Zone ${emp.Zone}`;
+
     // Check if employee is a supervisor of a zone
     const supervisedZone = allLocations.find(
       (loc) => loc.Supervisor_ID === emp.Employee_ID
@@ -247,7 +250,7 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
 
   // Calculate ticket revenue from actual ticket purchases
   const ticketRevenue = filteredTickets.reduce(
-    (sum, t) => sum + t.Price * t.Quantity,
+    (sum, t) => sum + (Number(t.Price) || 0) * (Number(t.Quantity) || 1),
     0
   );
 
@@ -324,32 +327,35 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
   ];
 
   // Ticket stats - sum quantities instead of counting records
-  const ticketStats = [
-    {
-      type: "Adult",
-      sold: filteredTickets
-        .filter((t) => t.Ticket_Type === "Adult")
-        .reduce((sum, t) => sum + t.Quantity, 0),
-    },
-    {
-      type: "Child",
-      sold: filteredTickets
-        .filter((t) => t.Ticket_Type === "Child")
-        .reduce((sum, t) => sum + t.Quantity, 0),
-    },
-    {
-      type: "Senior",
-      sold: filteredTickets
-        .filter((t) => t.Ticket_Type === "Senior")
-        .reduce((sum, t) => sum + t.Quantity, 0),
-    },
-    {
-      type: "Student",
-      sold: filteredTickets
-        .filter((t) => t.Ticket_Type === "Student")
-        .reduce((sum, t) => sum + t.Quantity, 0),
-    },
-  ];
+  const ticketStats = useMemo(
+    () => [
+      {
+        type: "Adult",
+        sold: filteredTickets
+          .filter((t) => t.Ticket_Type === "Adult")
+          .reduce((sum, t) => sum + (Number(t.Quantity) || 1), 0),
+      },
+      {
+        type: "Child",
+        sold: filteredTickets
+          .filter((t) => t.Ticket_Type === "Child")
+          .reduce((sum, t) => sum + (Number(t.Quantity) || 1), 0),
+      },
+      {
+        type: "Senior",
+        sold: filteredTickets
+          .filter((t) => t.Ticket_Type === "Senior")
+          .reduce((sum, t) => sum + (Number(t.Quantity) || 1), 0),
+      },
+      {
+        type: "Student",
+        sold: filteredTickets
+          .filter((t) => t.Ticket_Type === "Student")
+          .reduce((sum, t) => sum + (Number(t.Quantity) || 1), 0),
+      },
+    ],
+    [filteredTickets]
+  );
 
   const handleDeleteEmployee = (emp) => {
     // Check if employee is a supervisor
@@ -374,6 +380,9 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
   };
 
   const handleAddEmployee = (formData) => {
+    // Find the location object for the selected zone
+    const zoneLocation = allLocations.find((loc) => loc.Zone === formData.zone);
+
     const newEmployee = {
       Employee_ID: Math.max(...allEmployees.map((e) => e.Employee_ID)) + 1,
       First_Name: formData.firstName,
@@ -385,7 +394,8 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
       Email: formData.email,
       Password: "password123",
       Address: formData.address,
-      Supervisor_ID: null,
+      Zone: formData.zone,
+      Supervisor_ID: zoneLocation ? zoneLocation.Supervisor_ID : null,
       Job_Title: jobTitles.find((j) => j.Job_ID === parseInt(formData.jobId)),
     };
 
@@ -1614,7 +1624,9 @@ function AddEmployeeDialog({
     jobId: "3",
     email: "",
     address: "",
+    zone: "A",
   });
+  const [birthdateError, setBirthdateError] = useState("");
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -1697,7 +1709,7 @@ function AddEmployeeDialog({
                 </SelectTrigger>
                 <SelectContent>
                   {jobTitles
-                    .filter((j) => j.Job_ID !== 1)
+                    .filter((j) => j.Job_ID !== 1 && j.Job_ID !== 2)
                     .map((job) => (
                       <SelectItem
                         key={job.Job_ID}
@@ -1716,11 +1728,78 @@ function AddEmployeeDialog({
                   id="birthdate"
                   type="date"
                   value={formData.birthdate}
-                  onChange={(e) =>
-                    setFormData({ ...formData, birthdate: e.target.value })
+                  onChange={(e) => {
+                    const dateValue = e.target.value;
+                    setBirthdateError(""); // Clear error on change
+
+                    // Store the value regardless of validation
+                    setFormData({ ...formData, birthdate: dateValue });
+
+                    // Only validate if we have input and it's a complete date
+                    if (!dateValue) return;
+
+                    // Split the date value to check year specifically
+                    const [year, month, day] = dateValue.split("-");
+
+                    // Only validate if we have a complete 4-digit year and complete date
+                    if (
+                      year &&
+                      year.length === 4 &&
+                      month &&
+                      month.length === 2 &&
+                      day &&
+                      day.length === 2
+                    ) {
+                      const selectedDate = new Date(dateValue);
+                      // Validate that it's a real date (not Invalid Date)
+                      if (isNaN(selectedDate.getTime())) return;
+
+                      const today = new Date();
+                      const minDate = new Date();
+                      const maxDate = new Date();
+
+                      // Set min date (70 years ago)
+                      minDate.setFullYear(today.getFullYear() - 70);
+                      // Set max date (18 years ago)
+                      maxDate.setFullYear(today.getFullYear() - 18);
+
+                      if (selectedDate > maxDate) {
+                        setBirthdateError(
+                          "Employee must be at least 18 years old"
+                        );
+                        return;
+                      }
+                      if (selectedDate < minDate) {
+                        setBirthdateError(
+                          "Employee must be under 70 years old"
+                        );
+                        return;
+                      }
+                    }
+                  }}
+                  min={
+                    new Date(
+                      new Date().setFullYear(new Date().getFullYear() - 70)
+                    )
+                      .toISOString()
+                      .split("T")[0]
                   }
+                  max={
+                    new Date(
+                      new Date().setFullYear(new Date().getFullYear() - 18)
+                    )
+                      .toISOString()
+                      .split("T")[0]
+                  }
+                  className={birthdateError ? "border-red-500" : ""}
                   required
+                  onInvalid={(e) => e.preventDefault()}
                 />
+                {birthdateError && (
+                  <p className="text-xs text-red-600 mt-0.5">
+                    {birthdateError}
+                  </p>
+                )}
               </div>
               <div>
                 <Label htmlFor="sex">Sex *</Label>
@@ -1751,6 +1830,26 @@ function AddEmployeeDialog({
                 }
                 required
               />
+            </div>
+            <div>
+              <Label htmlFor="zone">Zone Assignment *</Label>
+              <Select
+                value={formData.zone}
+                onValueChange={(value) =>
+                  setFormData({ ...formData, zone: value })
+                }
+              >
+                <SelectTrigger className="cursor-pointer">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {["A", "B", "C", "D"].map((zone) => (
+                    <SelectItem key={zone} value={zone}>
+                      Zone {zone}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <Button
               type="submit"

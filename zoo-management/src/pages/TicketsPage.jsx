@@ -6,7 +6,7 @@ import {
 } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Check, X } from "lucide-react";
-import { toast } from "sonner@2.0.3";
+import { toast } from "sonner";
 import { currentUser } from "../data/mockData";
 import { usePricing } from "../data/PricingContext";
 
@@ -24,31 +24,35 @@ const comparisonFeatures = [
   { feature: "Behind-the-Scenes Tours", dayPass: false, membership: "Yes" },
 ];
 
-export function TicketsPage({ onNavigate, addToCart }) {
+export function TicketsPage({ onNavigate, addToCart, cart = [] }) {
   const { ticketPrices: prices, membershipPrice } = usePricing();
 
   // Define ticket pricing using context prices
   const ticketPrices = [
     {
       id: "adult",
+      ticketId: 1,
       type: "Adult Day Pass",
       price: prices.adult,
       description: "Full day access for adults (ages 13+)",
     },
     {
       id: "child",
+      ticketId: 2,
       type: "Child Day Pass",
       price: prices.child,
       description: "Full day access for children (ages 3-12)",
     },
     {
       id: "student",
+      ticketId: 3,
       type: "Student Day Pass",
       price: prices.student,
       description: "Full day access for students (with valid ID)",
     },
     {
       id: "senior",
+      ticketId: 4,
       type: "Senior Day Pass",
       price: prices.senior,
       description: "Full day access for seniors (ages 65+)",
@@ -61,19 +65,11 @@ export function TicketsPage({ onNavigate, addToCart }) {
         onNavigate("login");
       }
     } else if (addToCart) {
-      // Use consistent IDs based on ticket type
-      const ticketIdMap = {
-        adult: 9001,
-        child: 9002,
-        student: 9003,
-        senior: 9004,
-      };
-
       addToCart({
-        id: ticketIdMap[ticket.id],
+        id: ticket.ticketId,  // Use the predefined ticket ID
         name: ticket.type,
         price: ticket.price,
-        type: "item",
+        type: "ticket",
       });
       toast.success(`Added ${ticket.type} to cart!`);
     }
@@ -93,7 +89,14 @@ export function TicketsPage({ onNavigate, addToCart }) {
         onNavigate("login");
       }
     } else if (addToCart) {
-      // Add membership to cart using pricing context
+      // Check if membership is already in cart
+      const membershipInCart = cart.some((item) => item.id === 9000);
+
+      if (membershipInCart) {
+        toast.error("You can only have one membership in the cart!");
+        return;
+      }
+
       addToCart({
         id: 9000, // Unique ID for membership
         name: "Annual Membership",

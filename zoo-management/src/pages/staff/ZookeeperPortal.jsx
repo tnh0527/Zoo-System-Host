@@ -35,7 +35,7 @@ import {
   Sparkles,
   Heart,
 } from "lucide-react";
-import { toast } from "sonner@2.0.3";
+import { toast } from "sonner";
 import { useData } from "../../data/DataContext";
 import { ZooLogo } from "../../components/ZooLogo";
 

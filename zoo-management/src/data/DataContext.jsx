@@ -10,7 +10,7 @@
  * across all pages and portals in real-time.
  */
 
-import { createContext, useContext, useState, ReactNode } from "react";
+import { createContext, useContext, useState } from "react";
 import {
   animals as initialAnimals,
   items as initialItems,

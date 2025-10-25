@@ -8,12 +8,8 @@ import {
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
 import { ShoppingCart, ShoppingBag } from "lucide-react";
-import { toast } from "sonner@2.0.3";
-import {
-  currentUser,
-  currentUserType,
-  getCustomerMembership,
-} from "../data/mockData";
+import { toast } from "sonner";
+import { currentUser } from "../data/mockData";
 import { useData } from "../data/DataContext";
 import { ImageWithFallback } from "../components/figma/ImageWithFallback";
 
@@ -196,11 +192,7 @@ export function ShopPage({ onNavigate, addToCart }) {
   const { items: dbItems } = useData();
   const [selectedCategory, setSelectedCategory] = useState("All");
 
-  // Check if current user is a customer with active membership
-  const hasMembership =
-    currentUser && currentUserType === "customer"
-      ? getCustomerMembership(currentUser.Customer_ID) !== null
-      : false;
+  // Pricing is handled centrally in CartPage (member discount applied at checkout)
 
   // Convert database items to ShopItem format
   const shopItemsFromDb = dbItems.map((item) => ({
@@ -222,15 +214,12 @@ export function ShopPage({ onNavigate, addToCart }) {
         onNavigate("login");
       }
     } else if (addToCart) {
-      const price = hasMembership
-        ? parseFloat((product.price * 0.9).toFixed(2))
-        : product.price;
       addToCart({
         id:
           parseInt(product.id.replace(/\D/g, "")) ||
           Math.floor(Math.random() * 10000),
         name: product.name,
-        price: price,
+        price: product.price,
         type: "item",
       });
       toast.success(`Added ${product.name} to cart!`);

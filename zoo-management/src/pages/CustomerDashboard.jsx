@@ -10,7 +10,7 @@ import {
   X,
   RefreshCw,
 } from "lucide-react";
-import { toast } from "sonner@2.0.3";
+import { toast } from "sonner";
 import { Crown } from "lucide-react";
 import { useState } from "react";
 import {
@@ -799,33 +799,49 @@ export function CustomerDashboard({ user, onNavigate }) {
                       <div>
                         <h3 className="font-medium mb-3">Tickets</h3>
                         <div className="space-y-2">
-                          {purchaseTickets.map((ticket) => (
-                            <Card key={ticket.Ticket_ID}>
-                              <CardContent className="p-4">
-                                <div className="flex justify-between items-center">
-                                  <div>
-                                    <p className="font-medium">
-                                      {ticket.Ticket_Type} Ticket
-                                    </p>
-                                    <p className="text-sm text-gray-600">
-                                      Quantity: {ticket.Quantity}
-                                    </p>
-                                    <p className="text-sm text-gray-600">
-                                      Ticket ID: #{ticket.Ticket_ID}
-                                    </p>
+                          {(() => {
+                            // Group tickets by type and compute totals
+                            const grouped = purchaseTickets.reduce((acc, t) => {
+                              const type = t.Ticket_Type || "Unknown";
+                              const price = Number(t.Price) || 0;
+                              const quantity = Number(t.Quantity) || 1;
+                              if (!acc[type])
+                                acc[type] = {
+                                  Ticket_Type: type,
+                                  count: 0,
+                                  price,
+                                };
+                              acc[type].count += quantity;
+                              acc[type].price = price;
+                              return acc;
+                            }, {});
+
+                            return Object.values(grouped).map((g) => (
+                              <Card key={g.Ticket_Type}>
+                                <CardContent className="p-4">
+                                  <div className="flex justify-between items-center">
+                                    <div>
+                                      <p className="font-medium">
+                                        {g.Ticket_Type} Ticket
+                                      </p>
+                                      <p className="text-sm text-gray-600">
+                                        Quantity: {g.count}
+                                      </p>
+                                    </div>
+                                    <div className="text-right">
+                                      <p className="font-semibold text-green-600">
+                                        $
+                                        {(Number(g.price) * g.count).toFixed(2)}
+                                      </p>
+                                      <p className="text-xs text-gray-500">
+                                        ${Number(g.price).toFixed(2)} / per
+                                      </p>
+                                    </div>
                                   </div>
-                                  <div className="text-right">
-                                    <p className="font-semibold text-green-600">
-                                      $
-                                      {(ticket.Price * ticket.Quantity).toFixed(
-                                        2
-                                      )}
-                                    </p>
-                                  </div>
-                                </div>
-                              </CardContent>
-                            </Card>
-                          ))}
+                                </CardContent>
+                              </Card>
+                            ));
+                          })()}
                         </div>
                       </div>
                     )
@@ -868,7 +884,8 @@ export function CustomerDashboard({ user, onNavigate }) {
                                       ).toFixed(2)}
                                     </p>
                                     <p className="text-xs text-gray-500">
-                                      ${purchaseItem.Unit_Price.toFixed(2)} each
+                                      ${purchaseItem.Unit_Price.toFixed(2)} /
+                                      per
                                     </p>
                                   </div>
                                 </div>
@@ -921,8 +938,8 @@ export function CustomerDashboard({ user, onNavigate }) {
                                         ).toFixed(2)}
                                       </p>
                                       <p className="text-xs text-gray-500">
-                                        ${purchaseItem.Unit_Price.toFixed(2)}{" "}
-                                        each
+                                        ${purchaseItem.Unit_Price.toFixed(2)} /
+                                        per
                                       </p>
                                     </div>
                                   </div>
@@ -984,7 +1001,7 @@ export function CustomerDashboard({ user, onNavigate }) {
                                           {purchaseConcession.Unit_Price.toFixed(
                                             2
                                           )}{" "}
-                                          each
+                                          / per
                                         </p>
                                       </div>
                                     </div>

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { toast } from "sonner";
 
 // Components
 import { Navigation } from "./components/Navigation";
@@ -79,10 +80,23 @@ export default function App() {
 
   const addToCart = (item) => {
     setCart((prevCart) => {
+      // Prevent adding more than one membership (Item ID 9000) to the cart
+      if (item.id === 9000) {
+        const hasMembership = prevCart.some((i) => i.id === 9000);
+        if (hasMembership) {
+          toast.error("You can only have one membership in the cart at a time.");
+          return prevCart;
+        }
+      }
       const existingItem = prevCart.find(
         (i) => i.id === item.id && i.type === item.type
       );
       if (existingItem) {
+        // For membership item (9000), don't increase quantity beyond 1
+        if (item.id === 9000) {
+          toast.error("Membership already in cart. Proceed to checkout or remove it before adding another.");
+          return prevCart;
+        }
         return prevCart.map((i) =>
           i.id === item.id && i.type === item.type
             ? { ...i, quantity: i.quantity + 1 }
@@ -184,7 +198,11 @@ export default function App() {
         return <FoodPage addToCart={addToCart} />;
       case "tickets":
         return (
-          <TicketsPage onNavigate={handleNavigate} addToCart={addToCart} />
+          <TicketsPage
+            onNavigate={handleNavigate}
+            addToCart={addToCart}
+            cart={cart}
+          />
         );
       case "customer-dashboard":
         return user && userType === "customer" ? (

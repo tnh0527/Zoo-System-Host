@@ -38,7 +38,7 @@ import {
   TrendingUp,
   Trash2,
 } from "lucide-react";
-import { toast } from "sonner@2.0.3";
+import { toast } from "sonner";
 import { ZooLogo } from "../../components/ZooLogo";
 import { ImageWithFallback } from "../../components/figma/ImageWithFallback";
 import { useData } from "../../data/DataContext";
@@ -49,6 +49,8 @@ export function ConcessionPortal({ user, onLogout, onNavigate }) {
     addConcessionItem,
     updateConcessionItem,
     deleteConcessionItem,
+    purchases,
+    purchaseConcessionItems,
   } = useData();
   // All concession stands under management (Concession Worker manages all 4 stands)
   const allStands = concessionStands;
@@ -76,10 +78,30 @@ export function ConcessionPortal({ user, onLogout, onNavigate }) {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [itemToDelete, setItemToDelete] = useState(null);
 
-  // Stats
-  const todayRevenue = 1845.0;
-  const allTimeRevenue = 15670.5;
-  const itemsSoldToday = 246;
+  // Calculate revenue from actual purchases
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const todayPurchaseConcessionItems = purchaseConcessionItems.filter((pci) => {
+    const purchase = purchases.find((p) => p.Purchase_ID === pci.Purchase_ID);
+    if (!purchase) return false;
+    const purchaseDate = new Date(purchase.Purchase_Date);
+    purchaseDate.setHours(0, 0, 0, 0);
+    return purchaseDate.getTime() === today.getTime();
+  });
+
+  const todayRevenue = todayPurchaseConcessionItems.reduce(
+    (sum, pci) => sum + pci.Unit_Price * pci.Quantity,
+    0
+  );
+  const allTimeRevenue = purchaseConcessionItems.reduce(
+    (sum, pci) => sum + pci.Unit_Price * pci.Quantity,
+    0
+  );
+  const itemsSoldToday = todayPurchaseConcessionItems.reduce(
+    (sum, pci) => sum + pci.Quantity,
+    0
+  );
 
   // Top selling items with mock quantities (top 3 only)
   const topItems = [
@@ -216,7 +238,7 @@ export function ConcessionPortal({ user, onLogout, onNavigate }) {
       </header>
 
       {/* Main Content */}
-      <div className="container mx-auto px-6 py-12 max-h-[calc(100vh-180px)] overflow-y-auto">
+      <div className="container mx-auto px-6 py-12">
         {/* Stats Dashboard - Moved to Top */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <Card>
@@ -251,8 +273,7 @@ export function ConcessionPortal({ user, onLogout, onNavigate }) {
 
           <Card>
             <CardContent className="pt-6 text-center">
-              <Coffee className="h-6 w-6 text-orange-600 mx-auto mb-2" />
-              <div className="text-3xl text-orange-600 mb-2">
+              <div className="text-3xl text-green-600 mb-2">
                 {itemsSoldToday}
               </div>
               <p className="text-gray-700">Items Sold Today</p>
@@ -260,119 +281,106 @@ export function ConcessionPortal({ user, onLogout, onNavigate }) {
           </Card>
 
           <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between mb-2">
-                <TrendingUp className="h-6 w-6 text-teal-600" />
-                <Badge className="bg-teal-100 text-teal-700 border-teal-300">
-                  Today
-                </Badge>
-              </div>
+            <CardContent className="pt-6 text-center">
               {topSellingItemToday ? (
                 <>
-                  <div className="text-lg text-teal-600 mb-1">
+                  <div className="text-2xl text-green-600 mb-2">
                     {topSellingItemToday.item.Item_Name}
                   </div>
-                  <p className="text-gray-700 text-sm">Top Selling Item</p>
-                  <p className="text-xs text-gray-500 mt-1">
-                    {topSellingItemToday.quantity} sold
+                  <p className="text-gray-700">Top-Selling Item Today</p>
+                  <p className="text-sm text-gray-500">
+                    ({topSellingItemToday.quantity} sold)
                   </p>
                 </>
               ) : (
-                <p className="text-gray-500">No sales data</p>
+                <>
+                  <div className="text-2xl text-green-600 mb-2">N/A</div>
+                  <p className="text-gray-700">Top-Selling Item Today</p>
+                </>
               )}
             </CardContent>
           </Card>
         </div>
 
-        {/* Menu Management */}
-        <div className="mb-8">
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h2 className="text-2xl">All Menu Items</h2>
-              <p className="text-gray-600">
-                Manage items across all concession stands
-              </p>
+        {/* Current Menu */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center">
+                <Coffee className="h-5 w-5 mr-2 text-green-600" />
+                Current Menu ({menuItems.length} items)
+              </CardTitle>
+              <Button
+                className="bg-green-600 hover:bg-green-700 cursor-pointer"
+                onClick={() => setAddDialogOpen(true)}
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Add New Item
+              </Button>
             </div>
-            <Button
-              onClick={() => setAddDialogOpen(true)}
-              className="bg-green-600 hover:bg-green-700 cursor-pointer"
-            >
-              <Plus className="h-4 w-4 mr-2" />
-              Add New Item
-            </Button>
-          </div>
-
-          <Card className="h-[650px] flex flex-col">
-            <CardContent className="pt-6 flex-1 overflow-hidden">
-              {/* Make the list scrollable */}
-              <div className="h-full overflow-y-auto space-y-4 pr-2">
-                {menuItems.map((item) => {
-                  const stand = allStands.find(
-                    (s) => s.Stand_ID === item.Stand_ID
-                  );
-                  return (
-                    <div
-                      key={item.Concession_Item_ID}
-                      className="border rounded-lg p-4 hover:shadow-md transition-shadow flex items-center justify-between"
-                    >
-                      {/* Left side: image + info */}
-                      <div className="flex items-start space-x-4 flex-1 min-w-0">
-                        <div className="w-20 h-20 bg-gray-100 rounded-lg flex items-center justify-center overflow-hidden flex-shrink-0">
-                          {item.image ? (
-                            <ImageWithFallback
-                              src={item.image}
-                              alt={item.Item_Name}
-                              className="w-full h-full object-cover"
-                            />
-                          ) : (
-                            <Coffee className="h-10 w-10 text-gray-400" />
-                          )}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <h3 className="font-medium truncate">
-                            {item.Item_Name}
-                          </h3>
-                          <p className="text-sm text-gray-600">
-                            ${item.Price.toFixed(2)}
-                          </p>
-                          {stand && (
-                            <Badge variant="outline" className="mt-1 text-xs">
-                              {stand.Stand_Name}
-                            </Badge>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Right side: buttons */}
-                      <div className="flex gap-2 ml-4 flex-shrink-0">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="cursor-pointer"
-                          onClick={() => handleEditClick(item)}
-                        >
-                          <Edit2 className="h-3 w-3 mr-1" />
-                          Edit
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="text-red-600 border-red-600 hover:bg-red-50 cursor-pointer"
-                          onClick={() => handleDeleteClick(item)}
-                        >
-                          <Trash2 className="h-3 w-3" />
-                        </Button>
-                      </div>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3 max-h-[500px] overflow-y-auto pr-2">
+              {menuItems.map((item) => (
+                <div
+                  key={item.Concession_Item_ID}
+                  className="flex items-center justify-between p-4 rounded-lg border hover:border-green-600 transition-colors"
+                >
+                  <div className="flex items-center space-x-4 flex-1">
+                    <div className="w-16 h-16 bg-gray-100 rounded-lg flex items-center justify-center overflow-hidden">
+                      {item.image ? (
+                        <ImageWithFallback
+                          src={item.image}
+                          alt={item.Item_Name}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <Coffee className="h-8 w-8 text-gray-400" />
+                      )}
                     </div>
-                  );
-                })}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+                    <div className="flex-1">
+                      <h3 className="font-medium">{item.Item_Name}</h3>
+                      <p className="text-sm text-gray-600">
+                        {concessionStands.find(
+                          (s) => s.Stand_ID === item.Stand_ID
+                        )?.Stand_Name || "Unknown Location"}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-4">
+                    <div className="text-right">
+                      <p className="text-2xl font-semibold text-green-600">
+                        ${item.Price.toFixed(2)}
+                      </p>
+                    </div>
+                    <div className="flex space-x-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleEditClick(item)}
+                        className="cursor-pointer"
+                      >
+                        <Edit2 className="h-4 w-4 mr-1" />
+                        Edit
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleDeleteClick(item)}
+                        className="cursor-pointer border-red-600 text-red-600 hover:bg-red-50"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
 
-        {/* Sales Performance */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Selling Items Stats */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mt-8">
           {/* Top Selling Items */}
           <Card>
             <CardHeader>
