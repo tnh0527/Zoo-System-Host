@@ -234,6 +234,30 @@ export const transactionAPI = {
 };
 
 // ============================================
+// PRICING API
+// ============================================
+
+export const pricingAPI = {
+  // Get current pricing
+  getPricing: async () => {
+    const response = await fetch(`${API_BASE_URL}/admin/pricing`);
+    if (!response.ok) throw new Error("Failed to fetch pricing");
+    return response.json();
+  },
+
+  // Update pricing
+  updatePricing: async (ticketPrices, membershipPrice) => {
+    const response = await fetch(`${API_BASE_URL}/admin/pricing`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ticketPrices, membershipPrice }),
+    });
+    if (!response.ok) throw new Error("Failed to update pricing");
+    return response.json();
+  },
+};
+
+// ============================================
 // HELPER FUNCTIONS
 // ============================================
 

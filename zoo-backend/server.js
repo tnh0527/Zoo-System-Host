@@ -3,16 +3,26 @@ import cors from "cors";
 import helmet from "helmet";
 import morgan from "morgan";
 import dotenv from "dotenv";
+import path from "path";
+import { fileURLToPath } from "url";
 import { testConnection } from "./config/database.js";
 import adminRoutes from "./routes/adminRoutes.js";
+import customerRoutes from "./routes/customerRoutes.js";
 
 dotenv.config();
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
 // Middleware
-app.use(helmet());
+app.use(
+  helmet({
+    crossOriginResourcePolicy: { policy: "cross-origin" }, // Allow cross-origin images
+  })
+);
 app.use(
   cors({
     origin: function (origin, callback) {
@@ -37,6 +47,9 @@ app.use(morgan("dev"));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Serve uploaded images as static files
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+
 // Health check
 app.get("/health", (req, res) => {
   res.status(200).json({
@@ -48,6 +61,7 @@ app.get("/health", (req, res) => {
 
 // Add all routes here
 app.use("/api/admin", adminRoutes);
+app.use("/api/customer", customerRoutes);
 
 // 404 handler
 app.use((req, res) => {

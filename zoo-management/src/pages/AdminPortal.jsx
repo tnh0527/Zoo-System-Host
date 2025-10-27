@@ -84,6 +84,7 @@ import {
   analyticsAPI,
   referenceAPI,
   transactionAPI,
+  pricingAPI,
   getDateRange,
 } from "../services/adminAPI";
 
@@ -509,13 +510,21 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
     setIsPricingManagementOpen(open);
   };
 
-  const handlePricingSave = () => {
-    // Update actual pricing state using context
-    updateTicketPrices(tempTicketPrices);
-    updateMembershipPrice(tempMembershipPrice);
+  const handlePricingSave = async () => {
+    try {
+      // Update pricing in database
+      await pricingAPI.updatePricing(tempTicketPrices, tempMembershipPrice);
 
-    setIsPricingManagementOpen(false);
-    toast.success("Pricing updated successfully!");
+      // Update actual pricing state using context
+      updateTicketPrices(tempTicketPrices);
+      updateMembershipPrice(tempMembershipPrice);
+
+      setIsPricingManagementOpen(false);
+      toast.success("Pricing updated successfully!");
+    } catch (error) {
+      console.error("Error updating pricing:", error);
+      toast.error("Failed to update pricing");
+    }
   };
 
   const handleAddAnimal = async (formData) => {
@@ -533,7 +542,27 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
 
       const newAnimal = await animalAPI.create(animalData);
 
-      // Reload animals
+      // Upload image if provided
+      if (formData.imageFile) {
+        const imageFormData = new FormData();
+        imageFormData.append("image", formData.imageFile);
+
+        const imageResponse = await fetch(
+          `http://localhost:5000/api/admin/animals/${newAnimal.Animal_ID}/upload-image`,
+          {
+            method: "POST",
+            body: imageFormData,
+          }
+        );
+
+        if (!imageResponse.ok) {
+          const errorData = await imageResponse.json();
+          console.error("Image upload failed:", errorData);
+          toast.error("Animal added but image upload failed");
+        }
+      }
+
+      // Reload animals to get fresh data including image URL
       const animalsData = await animalAPI.getAll();
       setAllAnimalsDB(animalsData);
 
@@ -569,41 +598,69 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
     if (!editingAnimal) return;
 
     try {
-      const animalData = {
-        name: formData.name,
-        species: formData.species,
-        gender: formData.gender,
-        weight: parseFloat(formData.weight),
-        birthday: formData.birthday,
-        healthStatus: formData.healthStatus,
-        isVaccinated: formData.isVaccinated,
-        enclosureId: parseInt(formData.enclosureId),
-      };
+      // Build update object with only changed fields
+      const animalData = {};
 
-      await animalAPI.update(editingAnimal.Animal_ID, animalData);
+      if (formData.name !== editingAnimal.Animal_Name) {
+        animalData.name = formData.name;
+      }
+      if (formData.species !== editingAnimal.Species) {
+        animalData.species = formData.species;
+      }
+      if (formData.gender !== editingAnimal.Gender) {
+        animalData.gender = formData.gender;
+      }
+      if (formData.weight !== editingAnimal.Weight.toString()) {
+        animalData.weight = parseFloat(formData.weight);
+      }
+      // Compare formatted dates
+      const originalBirthday = new Date(editingAnimal.Birthday)
+        .toISOString()
+        .split("T")[0];
+      if (formData.birthday !== originalBirthday) {
+        animalData.birthday = formData.birthday;
+      }
+      if (formData.enclosureId !== editingAnimal.Enclosure_ID.toString()) {
+        animalData.enclosureId = parseInt(formData.enclosureId);
+      }
 
-      // Reload animals
+      // Only send update if there are changes to text fields
+      if (Object.keys(animalData).length > 0) {
+        // Add health status and vaccination if updating other fields
+        animalData.healthStatus = editingAnimal.Health_Status;
+        animalData.isVaccinated = editingAnimal.Is_Vaccinated;
+
+        await animalAPI.update(editingAnimal.Animal_ID, animalData);
+      }
+
+      // Upload new image if provided
+      if (formData.imageFile) {
+        const imageFormData = new FormData();
+        imageFormData.append("image", formData.imageFile);
+
+        const imageResponse = await fetch(
+          `http://localhost:5000/api/admin/animals/${editingAnimal.Animal_ID}/upload-image`,
+          {
+            method: "POST",
+            body: imageFormData,
+          }
+        );
+
+        if (!imageResponse.ok) {
+          const errorData = await imageResponse.json();
+          console.error("Image upload failed:", errorData);
+          toast.error("Animal updated but image upload failed");
+        }
+      }
+
+      // Reload animals to get fresh data including updated image URL
       const animalsData = await animalAPI.getAll();
       setAllAnimalsDB(animalsData);
 
-      // Also update context
-      const enclosure = allEnclosures.find(
-        (e) => e.Enclosure_ID === animalData.enclosureId
-      );
-      updateAnimal(editingAnimal.Animal_ID, {
-        Animal_Name: animalData.name,
-        Species: animalData.species,
-        Gender: animalData.gender,
-        Weight: animalData.weight,
-        Birthday: animalData.birthday,
-        Health_Status: animalData.healthStatus,
-        Is_Vaccinated: animalData.isVaccinated,
-        Enclosure_ID: animalData.enclosureId,
-        Enclosure: enclosure,
-      });
-
       setEditingAnimal(null);
-      toast.success(`Successfully updated ${formData.name}'s information!`);
+      toast.success(
+        `Successfully updated ${formData.name || editingAnimal.Animal_Name}!`
+      );
     } catch (error) {
       console.error("Error updating animal:", error);
       toast.error("Failed to update animal");
@@ -1954,7 +2011,22 @@ function AddAnimalDialog({ isOpen, onOpenChange, onAdd, enclosures }) {
     weight: "",
     birthday: "",
     enclosureId: "1",
+    imageFile: null,
   });
+  const [imagePreview, setImagePreview] = useState(null);
+
+  const handleImageChange = (e) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setFormData({ ...formData, imageFile: file });
+      // Create preview
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setImagePreview(reader.result);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -1966,7 +2038,9 @@ function AddAnimalDialog({ isOpen, onOpenChange, onAdd, enclosures }) {
       weight: "",
       birthday: "",
       enclosureId: "1",
+      imageFile: null,
     });
+    setImagePreview(null);
   };
 
   return (
@@ -2082,6 +2156,28 @@ function AddAnimalDialog({ isOpen, onOpenChange, onAdd, enclosures }) {
               </Select>
             </div>
           </div>
+          <div>
+            <Label htmlFor="animalImage">Animal Photo (Optional)</Label>
+            <Input
+              id="animalImage"
+              type="file"
+              accept="image/*"
+              onChange={handleImageChange}
+            />
+            <p className="text-sm text-gray-500 mt-1">
+              Upload a photo of this animal (JPG, PNG, WebP - max 5MB). If not
+              provided, a default species image will be used.
+            </p>
+            {imagePreview && (
+              <div className="mt-2">
+                <img
+                  src={imagePreview}
+                  alt="Preview"
+                  className="w-32 h-32 object-cover rounded border"
+                />
+              </div>
+            )}
+          </div>
           <Button
             type="submit"
             className="w-full bg-teal-600 hover:bg-teal-700 cursor-pointer"
@@ -2103,28 +2199,75 @@ function EditAnimalDialog({
   onDelete,
   enclosures,
 }) {
+  // Helper function to format date for input[type="date"]
+  const formatDateForInput = (dateString) => {
+    if (!dateString) return "";
+    // Handle both ISO format and MySQL date format
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return "";
+    // Return YYYY-MM-DD format
+    return date.toISOString().split("T")[0];
+  };
+
   const [formData, setFormData] = useState({
     name: animal?.Animal_Name || "",
     species: animal?.Species || "",
     gender: animal?.Gender || "M",
     weight: animal?.Weight?.toString() || "",
-    birthday: animal?.Birthday || "",
+    birthday: formatDateForInput(animal?.Birthday) || "",
     enclosureId: animal?.Enclosure_ID?.toString() || "1",
+    imageFile: null,
   });
+  const [imagePreview, setImagePreview] = useState(animal?.Image_URL || null);
+  const [originalData, setOriginalData] = useState(null);
+
+  // Check if any field has changed
+  const hasChanges = useMemo(() => {
+    if (!originalData) return false;
+
+    const textFieldsChanged =
+      formData.name !== originalData.name ||
+      formData.species !== originalData.species ||
+      formData.gender !== originalData.gender ||
+      formData.weight !== originalData.weight ||
+      formData.birthday !== originalData.birthday ||
+      formData.enclosureId !== originalData.enclosureId;
+
+    const imageChanged = formData.imageFile !== null;
+
+    return textFieldsChanged || imageChanged;
+  }, [formData, originalData]);
 
   // Update form data when animal changes
   useEffect(() => {
     if (animal) {
-      setFormData({
+      const initialData = {
         name: animal.Animal_Name,
         species: animal.Species,
         gender: animal.Gender,
         weight: animal.Weight.toString(),
-        birthday: animal.Birthday,
+        birthday: formatDateForInput(animal.Birthday),
         enclosureId: animal.Enclosure_ID.toString(),
-      });
+        imageFile: null,
+      };
+      setFormData(initialData);
+      setOriginalData(initialData);
+      setImagePreview(animal.Image_URL || null);
     }
   }, [animal]);
+
+  const handleImageChange = (e) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setFormData({ ...formData, imageFile: file });
+      // Create preview
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setImagePreview(reader.result);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -2240,10 +2383,33 @@ function EditAnimalDialog({
               </Select>
             </div>
           </div>
+          <div>
+            <Label htmlFor="editAnimalImage">Animal Photo (Optional)</Label>
+            <Input
+              id="editAnimalImage"
+              type="file"
+              accept="image/*"
+              onChange={handleImageChange}
+            />
+            <p className="text-sm text-gray-500 mt-1">
+              Upload a new photo for this animal (JPG, PNG, WebP - max 5MB).
+              Leave empty to keep current image.
+            </p>
+            {imagePreview && (
+              <div className="mt-2">
+                <img
+                  src={imagePreview}
+                  alt="Current/Preview"
+                  className="w-32 h-32 object-cover rounded border"
+                />
+              </div>
+            )}
+          </div>
           <div className="flex gap-3">
             <Button
               type="submit"
-              className="flex-1 bg-teal-600 hover:bg-teal-700 cursor-pointer"
+              disabled={!hasChanges}
+              className="flex-1 bg-teal-600 hover:bg-teal-700 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Save className="h-4 w-4 mr-2" />
               Save Changes

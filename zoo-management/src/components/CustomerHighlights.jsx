@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Button } from "./ui/button";
 import {
@@ -8,92 +8,9 @@ import {
   ChevronRight,
   MapPin,
 } from "lucide-react";
-
-const upcomingEvents = [
-  {
-    title: "Elephant Enrichment",
-    day: "Daily",
-    time: "2:00 PM",
-  },
-  {
-    title: "Lion Feeding Time",
-    day: "Daily",
-    time: "11:00 AM",
-  },
-  {
-    title: "Primate Playgroup",
-    day: "Daily",
-    time: "12:30 PM",
-  },
-  {
-    title: "Reptile Discovery",
-    day: "Daily",
-    time: "1:00 PM",
-  },
-  {
-    title: "Kangaroo Feeding",
-    day: "Daily",
-    time: "11:00 AM",
-  },
-  {
-    title: "Bird Feeding",
-    day: "Daily",
-    time: "10:00 AM",
-  },
-  {
-    title: "Flight Demonstration",
-    day: "Daily",
-    time: "12:00 PM",
-  },
-  {
-    title: "Bear Country Talk",
-    day: "Daily",
-    time: "4:00 PM",
-  },
-];
-
-const exhibits = [
-  {
-    name: "African Savanna",
-    zone: "Zone A",
-    description: "Home to elephants, giraffes, and zebras",
-  },
-  {
-    name: "Big Cat Territory",
-    zone: "Zone A",
-    description: "Lions, tigers, and leopards",
-  },
-  {
-    name: "Primate Forest",
-    zone: "Zone B",
-    description: "Gorillas, chimpanzees, and monkeys",
-  },
-  {
-    name: "Reptile House",
-    zone: "Zone B",
-    description: "Snakes, lizards, and crocodiles",
-  },
-  {
-    name: "Australian Outback",
-    zone: "Zone C",
-    description: "Kangaroos, koalas, and wallabies",
-  },
-  {
-    name: "Tropical Rainforest",
-    zone: "Zone C",
-    description: "Exotic birds, sloths, and tree frogs",
-  },
-  {
-    name: "Bird Sanctuary",
-    zone: "Zone D",
-    description: "Flamingos, eagles, and tropical birds",
-  },
-  {
-    name: "North American Wilderness",
-    zone: "Zone D",
-    description: "Bears, wolves, and elk",
-  },
-];
+import { exhibitsAPI, activitiesAPI } from "../services/customerAPI";
+import { ImageWithFallback } from "./figma/ImageWithFallback";
+import { getExhibitImage } from "../utils/imageMapping";
 
 const membershipBenefits = [
   "Unlimited zoo admission",
@@ -103,10 +20,44 @@ const membershipBenefits = [
 ];
 
 export function CustomerHighlights({ onNavigate }) {
+  const [exhibits, setExhibits] = useState([]);
+  const [activities, setActivities] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [eventsIndex, setEventsIndex] = useState(0);
   const [exhibitsIndex, setExhibitsIndex] = useState(0);
 
   const itemsPerPage = 3;
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        setExhibits([]); // Clear any existing data
+        setActivities([]); // Clear any existing data
+
+        const [exhibitsData, activitiesData] = await Promise.all([
+          exhibitsAPI.getAll(),
+          activitiesAPI.getAll(),
+        ]);
+
+        setExhibits(exhibitsData);
+        setActivities(activitiesData);
+      } catch (err) {
+        console.error("Error fetching data:", err);
+        setExhibits([]); // Ensure no data is shown on error
+        setActivities([]); // Ensure no data is shown on error
+        setError(
+          "Unable to connect to the server. Please ensure the backend is running."
+        );
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, []);
 
   const handleMembershipClick = () => {
     if (onNavigate) {
@@ -124,13 +75,11 @@ export function CustomerHighlights({ onNavigate }) {
   };
 
   const nextEvents = () => {
-    setEventsIndex((eventsIndex + 1) % upcomingEvents.length);
+    setEventsIndex((eventsIndex + 1) % activities.length);
   };
 
   const prevEvents = () => {
-    setEventsIndex(
-      eventsIndex === 0 ? upcomingEvents.length - 1 : eventsIndex - 1
-    );
+    setEventsIndex(eventsIndex === 0 ? activities.length - 1 : eventsIndex - 1);
   };
 
   const nextExhibits = () => {
@@ -152,8 +101,68 @@ export function CustomerHighlights({ onNavigate }) {
     return items;
   };
 
-  const visibleEvents = getVisibleItems(upcomingEvents, eventsIndex);
+  const visibleEvents = getVisibleItems(activities, eventsIndex);
   const visibleExhibits = getVisibleItems(exhibits, exhibitsIndex);
+
+  // Format time from 24-hour to 12-hour
+  const formatTime = (time) => {
+    if (!time) return "";
+    const [hours, minutes] = time.split(":");
+    const hour = parseInt(hours);
+    const period = hour >= 12 ? "PM" : "AM";
+    const displayHour = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
+    return `${displayHour}:${minutes} ${period}`;
+  };
+
+  if (loading) {
+    return (
+      <section className="py-16 bg-white">
+        <div className="container mx-auto px-6">
+          <div className="text-center">
+            <p className="text-gray-500">Loading...</p>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  if (error) {
+    return (
+      <section className="py-16 bg-white">
+        <div className="container mx-auto px-6">
+          <div className="text-center py-12">
+            <div className="bg-red-50 border border-red-200 rounded-lg p-6 max-w-2xl mx-auto">
+              <p className="text-red-600 font-semibold mb-2">
+                Connection Error
+              </p>
+              <p className="text-red-500">{error}</p>
+            </div>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  // Don't render if no data is available
+  if (!loading && (!exhibits.length || !activities.length)) {
+    return (
+      <section className="py-16 bg-white">
+        <div className="container mx-auto px-6">
+          <div className="text-center py-12">
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6 max-w-2xl mx-auto">
+              <p className="text-yellow-600 font-semibold mb-2">
+                No Data Available
+              </p>
+              <p className="text-yellow-700">
+                Unable to load exhibits and activities. Please check your
+                connection.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section className="py-16 bg-white">
@@ -187,12 +196,18 @@ export function CustomerHighlights({ onNavigate }) {
                     <Calendar className="h-24 w-24 text-green-300" />
                   </div>
                   <CardHeader>
-                    <CardTitle className="text-xl">{event.title}</CardTitle>
+                    <CardTitle className="text-xl">
+                      {event.Activity_Name}
+                    </CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <div className="flex items-center text-gray-600">
+                    <div className="flex items-center text-gray-600 mb-2">
                       <Calendar className="h-4 w-4 mr-2" />
-                      {event.day} at {event.time}
+                      Daily at {formatTime(event.Display_Time)}
+                    </div>
+                    <div className="flex items-center text-sm text-green-600">
+                      <MapPin className="h-4 w-4 mr-1" />
+                      {event.exhibit_Name}
                     </div>
                   </CardContent>
                 </Card>
@@ -234,11 +249,11 @@ export function CustomerHighlights({ onNavigate }) {
                   className="overflow-hidden hover:shadow-lg transition-shadow"
                 >
                   <div className="h-48 bg-gradient-to-br from-green-100 to-emerald-100 overflow-hidden">
-                    {exhibit.image ? (
-                      <img
-                        src={exhibit.image}
-                        alt={exhibit.name}
-                        className="w-full h-full object-cover"
+                    {getExhibitImage(exhibit) ? (
+                      <ImageWithFallback
+                        src={getExhibitImage(exhibit)}
+                        alt={exhibit.exhibit_Name}
+                        className="w-full h-48 object-cover"
                       />
                     ) : (
                       <div className="h-48 flex items-center justify-center">
@@ -247,14 +262,16 @@ export function CustomerHighlights({ onNavigate }) {
                     )}
                   </div>
                   <CardHeader>
-                    <CardTitle className="text-xl">{exhibit.name}</CardTitle>
+                    <CardTitle className="text-xl">
+                      {exhibit.exhibit_Name}
+                    </CardTitle>
                   </CardHeader>
                   <CardContent>
                     <p className="text-sm text-green-600 mb-2">
-                      {exhibit.zone}
+                      Zone {exhibit.Zone_Name}
                     </p>
                     <p className="text-gray-600 text-sm">
-                      {exhibit.description}
+                      {exhibit.exhibit_Description}
                     </p>
                   </CardContent>
                 </Card>
