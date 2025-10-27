@@ -254,6 +254,190 @@ export const updateLocationSupervisor = async (req, res) => {
 };
 
 // ============================================
+// EXHIBIT MANAGEMENT
+// ============================================
+
+export const getAllExhibits = async (req, res) => {
+  try {
+    const [exhibits] = await db.query(`
+      SELECT 
+        e.*,
+        l.Location_Description,
+        l.Zone
+      FROM Exhibit e
+      LEFT JOIN Location l ON e.Location_ID = l.Location_ID
+      ORDER BY e.exhibit_Name
+    `);
+    res.json(exhibits);
+  } catch (error) {
+    console.error("Error fetching exhibits:", error);
+    res.status(500).json({ error: "Failed to fetch exhibits" });
+  }
+};
+
+export const getExhibitById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const [exhibits] = await db.query(
+      `
+      SELECT 
+        e.*,
+        l.Location_Description,
+        l.Zone
+      FROM Exhibit e
+      LEFT JOIN Location l ON e.Location_ID = l.Location_ID
+      WHERE e.Exhibit_ID = ?
+    `,
+      [id]
+    );
+
+    if (exhibits.length === 0) {
+      return res.status(404).json({ error: "Exhibit not found" });
+    }
+
+    res.json(exhibits[0]);
+  } catch (error) {
+    console.error("Error fetching exhibit:", error);
+    res.status(500).json({ error: "Failed to fetch exhibit" });
+  }
+};
+
+export const addExhibit = async (req, res) => {
+  try {
+    const { name, description, capacity, displayTime, locationId } = req.body;
+
+    const [result] = await db.query(
+      `INSERT INTO Exhibit (exhibit_Name, exhibit_Description, Capacity, Display_Time, Location_ID) 
+       VALUES (?, ?, ?, ?, ?)`,
+      [
+        name,
+        description,
+        capacity || null,
+        displayTime || null,
+        locationId || null,
+      ]
+    );
+
+    const [newExhibit] = await db.query(
+      `
+      SELECT 
+        e.*,
+        l.Location_Description,
+        l.Zone
+      FROM Exhibit e
+      LEFT JOIN Location l ON e.Location_ID = l.Location_ID
+      WHERE e.Exhibit_ID = ?
+    `,
+      [result.insertId]
+    );
+
+    res.status(201).json(newExhibit[0]);
+  } catch (error) {
+    console.error("Error adding exhibit:", error);
+    res.status(500).json({ error: "Failed to add exhibit" });
+  }
+};
+
+export const updateExhibit = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, description, capacity, displayTime, locationId, imageUrl } =
+      req.body;
+
+    // Build dynamic UPDATE query with only provided fields
+    const updates = [];
+    const values = [];
+
+    if (name !== undefined) {
+      updates.push("exhibit_Name = ?");
+      values.push(name);
+    }
+    if (description !== undefined) {
+      updates.push("exhibit_Description = ?");
+      values.push(description);
+    }
+    if (capacity !== undefined) {
+      updates.push("Capacity = ?");
+      values.push(capacity);
+    }
+    if (displayTime !== undefined) {
+      updates.push("Display_Time = ?");
+      values.push(displayTime);
+    }
+    if (locationId !== undefined) {
+      updates.push("Location_ID = ?");
+      values.push(locationId);
+    }
+    if (imageUrl !== undefined) {
+      updates.push("Image_URL = ?");
+      values.push(imageUrl || null);
+    }
+
+    // Only update if there are fields to update
+    if (updates.length > 0) {
+      values.push(id);
+      await db.query(
+        `UPDATE Exhibit SET ${updates.join(", ")} WHERE Exhibit_ID = ?`,
+        values
+      );
+    }
+
+    // Fetch updated exhibit
+    const [updatedExhibit] = await db.query(
+      `
+      SELECT 
+        e.*,
+        l.Location_Description,
+        l.Zone
+      FROM Exhibit e
+      LEFT JOIN Location l ON e.Location_ID = l.Location_ID
+      WHERE e.Exhibit_ID = ?
+    `,
+      [id]
+    );
+
+    res.json(updatedExhibit[0]);
+  } catch (error) {
+    console.error("Error updating exhibit:", error);
+    res.status(500).json({ error: "Failed to update exhibit" });
+  }
+};
+
+export const deleteExhibit = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Check if exhibit exists and get its image URL for cleanup
+    const [exhibits] = await db.query(
+      "SELECT Image_URL FROM Exhibit WHERE Exhibit_ID = ?",
+      [id]
+    );
+
+    if (exhibits.length === 0) {
+      return res.status(404).json({ error: "Exhibit not found" });
+    }
+
+    // Delete the exhibit
+    await db.query("DELETE FROM Exhibit WHERE Exhibit_ID = ?", [id]);
+
+    // Clean up image file if exists
+    if (exhibits[0].Image_URL) {
+      const imagePath = exhibits[0].Image_URL.replace(
+        "http://localhost:3000",
+        ""
+      );
+      const filename = imagePath.split("/").pop();
+      deleteImageFile("exhibits", filename);
+    }
+
+    res.json({ message: "Exhibit deleted successfully" });
+  } catch (error) {
+    console.error("Error deleting exhibit:", error);
+    res.status(500).json({ error: "Failed to delete exhibit" });
+  }
+};
+
+// ============================================
 // ANIMAL MANAGEMENT
 // ============================================
 
@@ -315,13 +499,14 @@ export const addAnimal = async (req, res) => {
       healthStatus,
       isVaccinated,
       enclosureId,
+      imageUrl,
     } = req.body;
 
     const [result] = await db.query(
       `
       INSERT INTO Animal 
-      (Animal_Name, Species, Gender, Weight, Birthday, Health_Status, Is_Vaccinated, Enclosure_ID)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      (Animal_Name, Species, Gender, Weight, Birthday, Health_Status, Is_Vaccinated, Enclosure_ID, Image_URL)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
       [
         name,
@@ -332,6 +517,7 @@ export const addAnimal = async (req, res) => {
         healthStatus || "Good",
         isVaccinated ? 1 : 0,
         enclosureId,
+        imageUrl || null,
       ]
     );
 
@@ -369,27 +555,58 @@ export const updateAnimal = async (req, res) => {
       healthStatus,
       isVaccinated,
       enclosureId,
+      imageUrl,
     } = req.body;
 
-    await db.query(
-      `
-      UPDATE Animal 
-      SET Animal_Name = ?, Species = ?, Gender = ?, Weight = ?, 
-          Birthday = ?, Health_Status = ?, Is_Vaccinated = ?, Enclosure_ID = ?
-      WHERE Animal_ID = ?
-    `,
-      [
-        name,
-        species,
-        gender,
-        weight,
-        birthday,
-        healthStatus,
-        isVaccinated ? 1 : 0,
-        enclosureId,
-        id,
-      ]
-    );
+    // Build dynamic UPDATE query with only provided fields
+    const updates = [];
+    const values = [];
+
+    if (name !== undefined) {
+      updates.push("Animal_Name = ?");
+      values.push(name);
+    }
+    if (species !== undefined) {
+      updates.push("Species = ?");
+      values.push(species);
+    }
+    if (gender !== undefined) {
+      updates.push("Gender = ?");
+      values.push(gender);
+    }
+    if (weight !== undefined) {
+      updates.push("Weight = ?");
+      values.push(weight);
+    }
+    if (birthday !== undefined) {
+      updates.push("Birthday = ?");
+      values.push(birthday);
+    }
+    if (healthStatus !== undefined) {
+      updates.push("Health_Status = ?");
+      values.push(healthStatus);
+    }
+    if (isVaccinated !== undefined) {
+      updates.push("Is_Vaccinated = ?");
+      values.push(isVaccinated ? 1 : 0);
+    }
+    if (enclosureId !== undefined) {
+      updates.push("Enclosure_ID = ?");
+      values.push(enclosureId);
+    }
+    if (imageUrl !== undefined) {
+      updates.push("Image_URL = ?");
+      values.push(imageUrl || null);
+    }
+
+    // Only update if there are fields to update
+    if (updates.length > 0) {
+      values.push(id); // Add ID for WHERE clause
+      await db.query(
+        `UPDATE Animal SET ${updates.join(", ")} WHERE Animal_ID = ?`,
+        values
+      );
+    }
 
     // Fetch updated animal
     const [updatedAnimal] = await db.query(
@@ -720,5 +937,102 @@ export const getAllMemberships = async (req, res) => {
   } catch (error) {
     console.error("Error fetching memberships:", error);
     res.status(500).json({ error: "Failed to fetch memberships" });
+  }
+};
+
+// ============================================
+// PRICING MANAGEMENT
+// ============================================
+
+export const getPricing = async (req, res) => {
+  try {
+    // Get pricing from Config table
+    const [config] = await db.query(`
+      SELECT Config_Key, Config_Value
+      FROM Config
+      WHERE Config_Key IN ('ticket_adult', 'ticket_child', 'ticket_senior', 'ticket_student', 'membership_annual')
+    `);
+
+    // If no config exists, return default prices
+    if (config.length === 0) {
+      return res.json({
+        ticketPrices: {
+          adult: 29.99,
+          child: 14.99,
+          senior: 24.99,
+          student: 19.99,
+        },
+        membershipPrice: 149.99,
+      });
+    }
+
+    // Transform config array to pricing object
+    const pricing = {
+      ticketPrices: {
+        adult: 29.99,
+        child: 14.99,
+        senior: 24.99,
+        student: 19.99,
+      },
+      membershipPrice: 149.99,
+    };
+
+    config.forEach((item) => {
+      const value = parseFloat(item.Config_Value);
+      switch (item.Config_Key) {
+        case "ticket_adult":
+          pricing.ticketPrices.adult = value;
+          break;
+        case "ticket_child":
+          pricing.ticketPrices.child = value;
+          break;
+        case "ticket_senior":
+          pricing.ticketPrices.senior = value;
+          break;
+        case "ticket_student":
+          pricing.ticketPrices.student = value;
+          break;
+        case "membership_annual":
+          pricing.membershipPrice = value;
+          break;
+      }
+    });
+
+    res.json(pricing);
+  } catch (error) {
+    console.error("Error fetching pricing:", error);
+    res.status(500).json({ error: "Failed to fetch pricing" });
+  }
+};
+
+export const updatePricing = async (req, res) => {
+  try {
+    const { ticketPrices, membershipPrice } = req.body;
+
+    // Prepare pricing updates
+    const updates = [
+      { key: "ticket_adult", value: ticketPrices.adult },
+      { key: "ticket_child", value: ticketPrices.child },
+      { key: "ticket_senior", value: ticketPrices.senior },
+      { key: "ticket_student", value: ticketPrices.student },
+      { key: "membership_annual", value: membershipPrice },
+    ];
+
+    // Update or insert each pricing config
+    for (const update of updates) {
+      await db.query(
+        `
+        INSERT INTO Config (Config_Key, Config_Value)
+        VALUES (?, ?)
+        ON DUPLICATE KEY UPDATE Config_Value = ?
+      `,
+        [update.key, update.value.toString(), update.value.toString()]
+      );
+    }
+
+    res.json({ message: "Pricing updated successfully" });
+  } catch (error) {
+    console.error("Error updating pricing:", error);
+    res.status(500).json({ error: "Failed to update pricing" });
   }
 };

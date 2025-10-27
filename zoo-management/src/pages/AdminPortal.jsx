@@ -76,14 +76,20 @@ import {
 import { useData } from "../data/DataContext";
 import { toast } from "sonner";
 import { ZooLogo } from "../components/ZooLogo";
+import {
+  AddExhibitDialog,
+  EditExhibitDialog,
+} from "../components/ExhibitDialogs";
 import { usePricing } from "../data/PricingContext";
 import {
   employeeAPI,
   locationAPI,
+  exhibitAPI,
   animalAPI,
   analyticsAPI,
   referenceAPI,
   transactionAPI,
+  pricingAPI,
   getDateRange,
 } from "../services/adminAPI";
 
@@ -109,6 +115,7 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
   } = usePricing();
   const [allEmployees, setAllEmployees] = useState([]);
   const [allLocations, setAllLocations] = useState([]);
+  const [allExhibitsDB, setAllExhibitsDB] = useState([]);
   const [allAnimalsDB, setAllAnimalsDB] = useState([]);
   const [allJobTitles, setAllJobTitles] = useState([]);
   const [allEnclosures, setAllEnclosures] = useState([]);
@@ -123,6 +130,9 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
   const [viewZoneEmployees, setViewZoneEmployees] = useState(null);
   const [isSalaryManagementOpen, setIsSalaryManagementOpen] = useState(false);
   const [supervisorSearch, setSupervisorSearch] = useState("");
+  const [isAddExhibitOpen, setIsAddExhibitOpen] = useState(false);
+  const [deleteConfirmExhibit, setDeleteConfirmExhibit] = useState(null);
+  const [editingExhibit, setEditingExhibit] = useState(null);
   const [isAddAnimalOpen, setIsAddAnimalOpen] = useState(false);
   const [deleteConfirmAnimal, setDeleteConfirmAnimal] = useState(null);
   const [editingAnimal, setEditingAnimal] = useState(null);
@@ -166,6 +176,7 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
       const [
         employeesData,
         locationsData,
+        exhibitsData,
         animalsData,
         jobTitlesData,
         enclosuresData,
@@ -173,6 +184,7 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
       ] = await Promise.all([
         employeeAPI.getAll(),
         locationAPI.getAll(),
+        exhibitAPI.getAll(),
         animalAPI.getAll(),
         referenceAPI.getJobTitles(),
         referenceAPI.getEnclosures(),
@@ -181,6 +193,7 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
 
       setAllEmployees(employeesData);
       setAllLocations(locationsData);
+      setAllExhibitsDB(exhibitsData);
       setAllAnimalsDB(animalsData);
       setAllJobTitles(jobTitlesData);
       setAllEnclosures(enclosuresData);
@@ -509,14 +522,156 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
     setIsPricingManagementOpen(open);
   };
 
-  const handlePricingSave = () => {
-    // Update actual pricing state using context
-    updateTicketPrices(tempTicketPrices);
-    updateMembershipPrice(tempMembershipPrice);
+  const handlePricingSave = async () => {
+    try {
+      // Update pricing in database
+      await pricingAPI.updatePricing(tempTicketPrices, tempMembershipPrice);
 
-    setIsPricingManagementOpen(false);
-    toast.success("Pricing updated successfully!");
+      // Update actual pricing state using context
+      updateTicketPrices(tempTicketPrices);
+      updateMembershipPrice(tempMembershipPrice);
+
+      setIsPricingManagementOpen(false);
+      toast.success("Pricing updated successfully!");
+    } catch (error) {
+      console.error("Error updating pricing:", error);
+      toast.error("Failed to update pricing");
+    }
   };
+
+  // ============================================
+  // EXHIBIT HANDLERS
+  // ============================================
+
+  const handleAddExhibit = async (formData) => {
+    try {
+      const exhibitData = {
+        name: formData.name,
+        description: formData.description,
+        capacity: formData.capacity ? parseInt(formData.capacity) : null,
+        displayTime: formData.displayTime || null,
+        locationId: formData.locationId ? parseInt(formData.locationId) : null,
+      };
+
+      const newExhibit = await exhibitAPI.create(exhibitData);
+
+      // Upload image if provided
+      if (formData.imageFile) {
+        const imageFormData = new FormData();
+        imageFormData.append("image", formData.imageFile);
+
+        const imageResponse = await fetch(
+          `http://localhost:5000/api/admin/exhibits/${newExhibit.Exhibit_ID}/upload-image`,
+          {
+            method: "POST",
+            body: imageFormData,
+          }
+        );
+
+        if (!imageResponse.ok) {
+          const errorData = await imageResponse.json();
+          console.error("Image upload failed:", errorData);
+          toast.error("Exhibit added but image upload failed");
+        }
+      }
+
+      // Reload exhibits to get fresh data including image URL
+      const exhibitsData = await exhibitAPI.getAll();
+      setAllExhibitsDB(exhibitsData);
+
+      setIsAddExhibitOpen(false);
+      toast.success(`Successfully added exhibit: ${formData.name}!`);
+    } catch (error) {
+      console.error("Error adding exhibit:", error);
+      toast.error("Failed to add exhibit");
+    }
+  };
+
+  const handleUpdateExhibit = async (formData) => {
+    if (!editingExhibit) return;
+
+    try {
+      // Build update object with only changed fields
+      const exhibitData = {};
+
+      if (formData.name !== editingExhibit.exhibit_Name) {
+        exhibitData.name = formData.name;
+      }
+      if (formData.description !== editingExhibit.exhibit_Description) {
+        exhibitData.description = formData.description;
+      }
+      if (formData.capacity !== (editingExhibit.Capacity || "").toString()) {
+        exhibitData.capacity = formData.capacity
+          ? parseInt(formData.capacity)
+          : null;
+      }
+      if (formData.displayTime !== (editingExhibit.Display_Time || "")) {
+        exhibitData.displayTime = formData.displayTime || null;
+      }
+      if (
+        formData.locationId !== (editingExhibit.Location_ID || "").toString()
+      ) {
+        exhibitData.locationId = formData.locationId
+          ? parseInt(formData.locationId)
+          : null;
+      }
+
+      // Only send update if there are changes to text fields
+      if (Object.keys(exhibitData).length > 0) {
+        await exhibitAPI.update(editingExhibit.Exhibit_ID, exhibitData);
+      }
+
+      // Upload new image if provided
+      if (formData.imageFile) {
+        const imageFormData = new FormData();
+        imageFormData.append("image", formData.imageFile);
+
+        const imageResponse = await fetch(
+          `http://localhost:5000/api/admin/exhibits/${editingExhibit.Exhibit_ID}/upload-image`,
+          {
+            method: "POST",
+            body: imageFormData,
+          }
+        );
+
+        if (!imageResponse.ok) {
+          const errorData = await imageResponse.json();
+          console.error("Image upload failed:", errorData);
+          toast.error("Exhibit updated but image upload failed");
+        }
+      }
+
+      // Reload exhibits to get fresh data including updated image URL
+      const exhibitsData = await exhibitAPI.getAll();
+      setAllExhibitsDB(exhibitsData);
+
+      setEditingExhibit(null);
+      toast.success(`Successfully updated exhibit: ${formData.name}!`);
+    } catch (error) {
+      console.error("Error updating exhibit:", error);
+      toast.error("Failed to update exhibit");
+    }
+  };
+
+  const handleDeleteExhibit = async (exhibit) => {
+    try {
+      await exhibitAPI.delete(exhibit.Exhibit_ID);
+
+      // Reload exhibits
+      const exhibitsData = await exhibitAPI.getAll();
+      setAllExhibitsDB(exhibitsData);
+
+      setDeleteConfirmExhibit(null);
+      toast.success(`Successfully removed exhibit: ${exhibit.exhibit_Name}`);
+    } catch (error) {
+      console.error("Error deleting exhibit:", error);
+      toast.error("Failed to delete exhibit");
+    }
+  };
+
+  // ============================================
+  // ANIMAL HANDLERS
+  // ============================================
 
   const handleAddAnimal = async (formData) => {
     try {
@@ -533,7 +688,27 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
 
       const newAnimal = await animalAPI.create(animalData);
 
-      // Reload animals
+      // Upload image if provided
+      if (formData.imageFile) {
+        const imageFormData = new FormData();
+        imageFormData.append("image", formData.imageFile);
+
+        const imageResponse = await fetch(
+          `http://localhost:5000/api/admin/animals/${newAnimal.Animal_ID}/upload-image`,
+          {
+            method: "POST",
+            body: imageFormData,
+          }
+        );
+
+        if (!imageResponse.ok) {
+          const errorData = await imageResponse.json();
+          console.error("Image upload failed:", errorData);
+          toast.error("Animal added but image upload failed");
+        }
+      }
+
+      // Reload animals to get fresh data including image URL
       const animalsData = await animalAPI.getAll();
       setAllAnimalsDB(animalsData);
 
@@ -569,41 +744,69 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
     if (!editingAnimal) return;
 
     try {
-      const animalData = {
-        name: formData.name,
-        species: formData.species,
-        gender: formData.gender,
-        weight: parseFloat(formData.weight),
-        birthday: formData.birthday,
-        healthStatus: formData.healthStatus,
-        isVaccinated: formData.isVaccinated,
-        enclosureId: parseInt(formData.enclosureId),
-      };
+      // Build update object with only changed fields
+      const animalData = {};
 
-      await animalAPI.update(editingAnimal.Animal_ID, animalData);
+      if (formData.name !== editingAnimal.Animal_Name) {
+        animalData.name = formData.name;
+      }
+      if (formData.species !== editingAnimal.Species) {
+        animalData.species = formData.species;
+      }
+      if (formData.gender !== editingAnimal.Gender) {
+        animalData.gender = formData.gender;
+      }
+      if (formData.weight !== editingAnimal.Weight.toString()) {
+        animalData.weight = parseFloat(formData.weight);
+      }
+      // Compare formatted dates
+      const originalBirthday = new Date(editingAnimal.Birthday)
+        .toISOString()
+        .split("T")[0];
+      if (formData.birthday !== originalBirthday) {
+        animalData.birthday = formData.birthday;
+      }
+      if (formData.enclosureId !== editingAnimal.Enclosure_ID.toString()) {
+        animalData.enclosureId = parseInt(formData.enclosureId);
+      }
 
-      // Reload animals
+      // Only send update if there are changes to text fields
+      if (Object.keys(animalData).length > 0) {
+        // Add health status and vaccination if updating other fields
+        animalData.healthStatus = editingAnimal.Health_Status;
+        animalData.isVaccinated = editingAnimal.Is_Vaccinated;
+
+        await animalAPI.update(editingAnimal.Animal_ID, animalData);
+      }
+
+      // Upload new image if provided
+      if (formData.imageFile) {
+        const imageFormData = new FormData();
+        imageFormData.append("image", formData.imageFile);
+
+        const imageResponse = await fetch(
+          `http://localhost:5000/api/admin/animals/${editingAnimal.Animal_ID}/upload-image`,
+          {
+            method: "POST",
+            body: imageFormData,
+          }
+        );
+
+        if (!imageResponse.ok) {
+          const errorData = await imageResponse.json();
+          console.error("Image upload failed:", errorData);
+          toast.error("Animal updated but image upload failed");
+        }
+      }
+
+      // Reload animals to get fresh data including updated image URL
       const animalsData = await animalAPI.getAll();
       setAllAnimalsDB(animalsData);
 
-      // Also update context
-      const enclosure = allEnclosures.find(
-        (e) => e.Enclosure_ID === animalData.enclosureId
-      );
-      updateAnimal(editingAnimal.Animal_ID, {
-        Animal_Name: animalData.name,
-        Species: animalData.species,
-        Gender: animalData.gender,
-        Weight: animalData.weight,
-        Birthday: animalData.birthday,
-        Health_Status: animalData.healthStatus,
-        Is_Vaccinated: animalData.isVaccinated,
-        Enclosure_ID: animalData.enclosureId,
-        Enclosure: enclosure,
-      });
-
       setEditingAnimal(null);
-      toast.success(`Successfully updated ${formData.name}'s information!`);
+      toast.success(
+        `Successfully updated ${formData.name || editingAnimal.Animal_Name}!`
+      );
     } catch (error) {
       console.error("Error updating animal:", error);
       toast.error("Failed to update animal");
@@ -1412,6 +1615,80 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
           </Card>
         </section>
 
+        {/* Exhibit Management */}
+        <section id="exhibits">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-2xl">🏛️ Exhibit Management</h2>
+            <AddExhibitDialog
+              isOpen={isAddExhibitOpen}
+              onOpenChange={setIsAddExhibitOpen}
+              onAdd={handleAddExhibit}
+              locations={allLocations}
+            />
+          </div>
+          <Card>
+            <CardContent className="pt-6">
+              <p className="text-sm text-gray-600 mb-4">
+                Manage zoo exhibits and displays
+              </p>
+              <ScrollArea className="h-[400px]">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                  {allExhibitsDB.map((exhibit) => (
+                    <Card
+                      key={exhibit.Exhibit_ID}
+                      className="p-4 hover:shadow-md transition-shadow"
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-2">
+                            <h3 className="font-semibold text-lg">
+                              {exhibit.exhibit_Name}
+                            </h3>
+                            {exhibit.Location_Description && (
+                              <Badge variant="outline" className="text-xs">
+                                {exhibit.Zone}
+                              </Badge>
+                            )}
+                          </div>
+                          <p className="text-sm text-gray-600 mb-2">
+                            {exhibit.exhibit_Description || "No description"}
+                          </p>
+                          <div className="flex flex-wrap gap-2 text-xs text-gray-500">
+                            {exhibit.Capacity && (
+                              <span>Capacity: {exhibit.Capacity}</span>
+                            )}
+                            {exhibit.Display_Time && (
+                              <span>• {exhibit.Display_Time}</span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex gap-1 ml-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setEditingExhibit(exhibit)}
+                            className="cursor-pointer"
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setDeleteConfirmExhibit(exhibit)}
+                            className="text-red-600 hover:text-red-700 hover:bg-red-50 cursor-pointer"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    </Card>
+                  ))}
+                </div>
+              </ScrollArea>
+            </CardContent>
+          </Card>
+        </section>
+
         {/* Animal Management */}
         <section id="animals">
           <div className="flex items-center justify-between mb-6">
@@ -1639,6 +1916,19 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+
+        {/* Edit Exhibit Dialog */}
+        <EditExhibitDialog
+          exhibit={editingExhibit}
+          isOpen={editingExhibit !== null}
+          onOpenChange={(open) => !open && setEditingExhibit(null)}
+          onUpdate={handleUpdateExhibit}
+          onDelete={(exhibit) => {
+            setEditingExhibit(null);
+            setDeleteConfirmExhibit(exhibit);
+          }}
+          locations={allLocations}
+        />
 
         {/* Edit Animal Dialog */}
         <EditAnimalDialog
@@ -1954,7 +2244,22 @@ function AddAnimalDialog({ isOpen, onOpenChange, onAdd, enclosures }) {
     weight: "",
     birthday: "",
     enclosureId: "1",
+    imageFile: null,
   });
+  const [imagePreview, setImagePreview] = useState(null);
+
+  const handleImageChange = (e) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setFormData({ ...formData, imageFile: file });
+      // Create preview
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setImagePreview(reader.result);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -1966,7 +2271,9 @@ function AddAnimalDialog({ isOpen, onOpenChange, onAdd, enclosures }) {
       weight: "",
       birthday: "",
       enclosureId: "1",
+      imageFile: null,
     });
+    setImagePreview(null);
   };
 
   return (
@@ -2082,6 +2389,28 @@ function AddAnimalDialog({ isOpen, onOpenChange, onAdd, enclosures }) {
               </Select>
             </div>
           </div>
+          <div>
+            <Label htmlFor="animalImage">Animal Photo (Optional)</Label>
+            <Input
+              id="animalImage"
+              type="file"
+              accept="image/*"
+              onChange={handleImageChange}
+            />
+            <p className="text-sm text-gray-500 mt-1">
+              Upload a photo of this animal (JPG, PNG, WebP - max 5MB). If not
+              provided, a default species image will be used.
+            </p>
+            {imagePreview && (
+              <div className="mt-2">
+                <img
+                  src={imagePreview}
+                  alt="Preview"
+                  className="w-32 h-32 object-cover rounded border"
+                />
+              </div>
+            )}
+          </div>
           <Button
             type="submit"
             className="w-full bg-teal-600 hover:bg-teal-700 cursor-pointer"
@@ -2103,28 +2432,75 @@ function EditAnimalDialog({
   onDelete,
   enclosures,
 }) {
+  // Helper function to format date for input[type="date"]
+  const formatDateForInput = (dateString) => {
+    if (!dateString) return "";
+    // Handle both ISO format and MySQL date format
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return "";
+    // Return YYYY-MM-DD format
+    return date.toISOString().split("T")[0];
+  };
+
   const [formData, setFormData] = useState({
     name: animal?.Animal_Name || "",
     species: animal?.Species || "",
     gender: animal?.Gender || "M",
     weight: animal?.Weight?.toString() || "",
-    birthday: animal?.Birthday || "",
+    birthday: formatDateForInput(animal?.Birthday) || "",
     enclosureId: animal?.Enclosure_ID?.toString() || "1",
+    imageFile: null,
   });
+  const [imagePreview, setImagePreview] = useState(animal?.Image_URL || null);
+  const [originalData, setOriginalData] = useState(null);
+
+  // Check if any field has changed
+  const hasChanges = useMemo(() => {
+    if (!originalData) return false;
+
+    const textFieldsChanged =
+      formData.name !== originalData.name ||
+      formData.species !== originalData.species ||
+      formData.gender !== originalData.gender ||
+      formData.weight !== originalData.weight ||
+      formData.birthday !== originalData.birthday ||
+      formData.enclosureId !== originalData.enclosureId;
+
+    const imageChanged = formData.imageFile !== null;
+
+    return textFieldsChanged || imageChanged;
+  }, [formData, originalData]);
 
   // Update form data when animal changes
   useEffect(() => {
     if (animal) {
-      setFormData({
+      const initialData = {
         name: animal.Animal_Name,
         species: animal.Species,
         gender: animal.Gender,
         weight: animal.Weight.toString(),
-        birthday: animal.Birthday,
+        birthday: formatDateForInput(animal.Birthday),
         enclosureId: animal.Enclosure_ID.toString(),
-      });
+        imageFile: null,
+      };
+      setFormData(initialData);
+      setOriginalData(initialData);
+      setImagePreview(animal.Image_URL || null);
     }
   }, [animal]);
+
+  const handleImageChange = (e) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setFormData({ ...formData, imageFile: file });
+      // Create preview
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setImagePreview(reader.result);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -2240,10 +2616,33 @@ function EditAnimalDialog({
               </Select>
             </div>
           </div>
+          <div>
+            <Label htmlFor="editAnimalImage">Animal Photo (Optional)</Label>
+            <Input
+              id="editAnimalImage"
+              type="file"
+              accept="image/*"
+              onChange={handleImageChange}
+            />
+            <p className="text-sm text-gray-500 mt-1">
+              Upload a new photo for this animal (JPG, PNG, WebP - max 5MB).
+              Leave empty to keep current image.
+            </p>
+            {imagePreview && (
+              <div className="mt-2">
+                <img
+                  src={imagePreview}
+                  alt="Current/Preview"
+                  className="w-32 h-32 object-cover rounded border"
+                />
+              </div>
+            )}
+          </div>
           <div className="flex gap-3">
             <Button
               type="submit"
-              className="flex-1 bg-teal-600 hover:bg-teal-700 cursor-pointer"
+              disabled={!hasChanges}
+              className="flex-1 bg-teal-600 hover:bg-teal-700 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Save className="h-4 w-4 mr-2" />
               Save Changes

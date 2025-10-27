@@ -42,6 +42,7 @@ export default function App() {
   const [currentPage, setCurrentPage] = useState("home");
   const [user, setUser] = useState(currentUser);
   const [userType, setUserType] = useState(currentUserType);
+  const [pageKey, setPageKey] = useState(0);
 
   // Cart state
   const [cart, setCart] = useState([]);
@@ -74,6 +75,10 @@ export default function App() {
 
   const handleNavigate = (page) => {
     setCurrentPage(page);
+    // Increment page key to force remount of certain pages
+    if (page === "animals" || page === "attractions") {
+      setPageKey((prev) => prev + 1);
+    }
     // Scroll to top when navigating
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
@@ -84,7 +89,9 @@ export default function App() {
       if (item.id === 9000) {
         const hasMembership = prevCart.some((i) => i.id === 9000);
         if (hasMembership) {
-          toast.error("You can only have one membership in the cart at a time.");
+          toast.error(
+            "You can only have one membership in the cart at a time."
+          );
           return prevCart;
         }
       }
@@ -94,7 +101,9 @@ export default function App() {
       if (existingItem) {
         // For membership item (9000), don't increase quantity beyond 1
         if (item.id === 9000) {
-          toast.error("Membership already in cart. Proceed to checkout or remove it before adding another.");
+          toast.error(
+            "Membership already in cart. Proceed to checkout or remove it before adding another."
+          );
           return prevCart;
         }
         return prevCart.map((i) =>
@@ -189,9 +198,9 @@ export default function App() {
       case "home":
         return <HomePage onNavigate={handleNavigate} />;
       case "animals":
-        return <AnimalsPage />;
+        return <AnimalsPage key={pageKey} />;
       case "attractions":
-        return <AttractionsPage />;
+        return <AttractionsPage key={pageKey} />;
       case "shop":
         return <ShopPage onNavigate={handleNavigate} addToCart={addToCart} />;
       case "food":

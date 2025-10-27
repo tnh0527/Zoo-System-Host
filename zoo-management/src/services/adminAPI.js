@@ -95,6 +95,73 @@ export const locationAPI = {
 };
 
 // ============================================
+// EXHIBIT API
+// ============================================
+
+export const exhibitAPI = {
+  // Get all exhibits
+  getAll: async () => {
+    const response = await fetch(`${API_BASE_URL}/admin/exhibits`);
+    if (!response.ok) throw new Error("Failed to fetch exhibits");
+    return response.json();
+  },
+
+  // Get exhibit by ID
+  getById: async (id) => {
+    const response = await fetch(`${API_BASE_URL}/admin/exhibits/${id}`);
+    if (!response.ok) throw new Error("Failed to fetch exhibit");
+    return response.json();
+  },
+
+  // Add new exhibit
+  create: async (exhibitData) => {
+    const response = await fetch(`${API_BASE_URL}/admin/exhibits`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(exhibitData),
+    });
+    if (!response.ok) throw new Error("Failed to create exhibit");
+    return response.json();
+  },
+
+  // Update exhibit
+  update: async (id, exhibitData) => {
+    const response = await fetch(`${API_BASE_URL}/admin/exhibits/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(exhibitData),
+    });
+    if (!response.ok) throw new Error("Failed to update exhibit");
+    return response.json();
+  },
+
+  // Delete exhibit
+  delete: async (id) => {
+    const response = await fetch(`${API_BASE_URL}/admin/exhibits/${id}`, {
+      method: "DELETE",
+    });
+    if (!response.ok) throw new Error("Failed to delete exhibit");
+    return response.json();
+  },
+
+  // Upload exhibit image
+  uploadImage: async (id, imageFile) => {
+    const formData = new FormData();
+    formData.append("image", imageFile);
+
+    const response = await fetch(
+      `${API_BASE_URL}/admin/exhibits/${id}/upload-image`,
+      {
+        method: "POST",
+        body: formData,
+      }
+    );
+    if (!response.ok) throw new Error("Failed to upload exhibit image");
+    return response.json();
+  },
+};
+
+// ============================================
 // ANIMAL API
 // ============================================
 
@@ -229,6 +296,30 @@ export const transactionAPI = {
   getMemberships: async () => {
     const response = await fetch(`${API_BASE_URL}/admin/memberships`);
     if (!response.ok) throw new Error("Failed to fetch memberships");
+    return response.json();
+  },
+};
+
+// ============================================
+// PRICING API
+// ============================================
+
+export const pricingAPI = {
+  // Get current pricing
+  getPricing: async () => {
+    const response = await fetch(`${API_BASE_URL}/admin/pricing`);
+    if (!response.ok) throw new Error("Failed to fetch pricing");
+    return response.json();
+  },
+
+  // Update pricing
+  updatePricing: async (ticketPrices, membershipPrice) => {
+    const response = await fetch(`${API_BASE_URL}/admin/pricing`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ticketPrices, membershipPrice }),
+    });
+    if (!response.ok) throw new Error("Failed to update pricing");
     return response.json();
   },
 };
