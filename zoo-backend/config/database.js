@@ -13,6 +13,10 @@ const pool = mysql.createPool({
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,
+  // SSL configuration for secure transport
+  ssl: {
+    rejectUnauthorized: false, // Set to true in production with proper certificates
+  },
 });
 
 const promisePool = pool.promise();

@@ -77,6 +77,15 @@ import { useData } from "../data/DataContext";
 import { toast } from "sonner";
 import { ZooLogo } from "../components/ZooLogo";
 import { usePricing } from "../data/PricingContext";
+import {
+  employeeAPI,
+  locationAPI,
+  animalAPI,
+  analyticsAPI,
+  referenceAPI,
+  transactionAPI,
+  getDateRange,
+} from "../services/adminAPI";
 
 export function AdminPortal({ user, onLogout, onNavigate }) {
   const {
@@ -98,8 +107,14 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
     updateTicketPrices,
     updateMembershipPrice,
   } = usePricing();
-  const [allEmployees, setAllEmployees] = useState(employeeRecords);
-  const [allLocations, setAllLocations] = useState(locations);
+  const [allEmployees, setAllEmployees] = useState([]);
+  const [allLocations, setAllLocations] = useState([]);
+  const [allAnimalsDB, setAllAnimalsDB] = useState([]);
+  const [allJobTitles, setAllJobTitles] = useState([]);
+  const [allEnclosures, setAllEnclosures] = useState([]);
+  const [allMemberships, setAllMemberships] = useState([]);
+  const [revenueData, setRevenueData] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
   const [isAddEmployeeOpen, setIsAddEmployeeOpen] = useState(false);
   const [isManageZoneOpen, setIsManageZoneOpen] = useState(false);
   const [selectedZone, setSelectedZone] = useState(null);
@@ -111,7 +126,7 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
   const [isAddAnimalOpen, setIsAddAnimalOpen] = useState(false);
   const [deleteConfirmAnimal, setDeleteConfirmAnimal] = useState(null);
   const [editingAnimal, setEditingAnimal] = useState(null);
-  const [lastUpdated] = useState(new Date());
+  const [lastUpdated, setLastUpdated] = useState(new Date());
 
   // Salary state for each job type (5 shared login roles)
   const [salaries, setSalaries] = useState({
@@ -130,6 +145,70 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
   const [tempTicketPrices, setTempTicketPrices] = useState({ ...ticketPrices });
   const [tempMembershipPrice, setTempMembershipPrice] =
     useState(membershipPrice);
+
+  // Load all data from database on mount
+  useEffect(() => {
+    loadAllData();
+  }, []);
+
+  // Reload revenue data when range changes
+  useEffect(() => {
+    if (!isLoading) {
+      loadRevenueData();
+    }
+  }, [revenueRange]);
+
+  const loadAllData = async () => {
+    try {
+      setIsLoading(true);
+
+      // Load all data in parallel
+      const [
+        employeesData,
+        locationsData,
+        animalsData,
+        jobTitlesData,
+        enclosuresData,
+        membershipsData,
+      ] = await Promise.all([
+        employeeAPI.getAll(),
+        locationAPI.getAll(),
+        animalAPI.getAll(),
+        referenceAPI.getJobTitles(),
+        referenceAPI.getEnclosures(),
+        transactionAPI.getMemberships(),
+      ]);
+
+      setAllEmployees(employeesData);
+      setAllLocations(locationsData);
+      setAllAnimalsDB(animalsData);
+      setAllJobTitles(jobTitlesData);
+      setAllEnclosures(enclosuresData);
+      setAllMemberships(membershipsData);
+
+      // Load revenue data
+      await loadRevenueData();
+
+      setLastUpdated(new Date());
+      toast.success("Data loaded successfully!");
+    } catch (error) {
+      console.error("Error loading data:", error);
+      toast.error("Failed to load data from database");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const loadRevenueData = async () => {
+    try {
+      const { startDate, endDate } = getDateRange(revenueRange);
+      const revenue = await analyticsAPI.getRevenue(startDate, endDate);
+      setRevenueData(revenue);
+    } catch (error) {
+      console.error("Error loading revenue data:", error);
+      toast.error("Failed to load revenue data");
+    }
+  };
 
   // Update supervisor salaries on mount and when locations change
   useEffect(() => {
@@ -236,67 +315,18 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
     );
   }, [allEmployees]);
 
-  // Calculate statistics from database with date filtering
-  const filteredPurchases = purchases.filter((p) =>
-    filterByDateRange(p.Purchase_Date)
-  );
-  const filteredTickets = tickets.filter((t) => {
-    const purchase = purchases.find((p) => p.Purchase_ID === t.Purchase_ID);
-    return purchase && filterByDateRange(purchase.Purchase_Date);
-  });
-  const filteredMemberships = memberships.filter((m) =>
-    filterByDateRange(m.Start_Date)
-  );
+  const displayAnimals = allAnimalsDB;
 
-  // Calculate ticket revenue from actual ticket purchases
-  const ticketRevenue = filteredTickets.reduce(
-    (sum, t) => sum + (Number(t.Price) || 0) * (Number(t.Quantity) || 1),
-    0
-  );
+  // Calculate statistics from database with revenue data from API
+  const ticketRevenue = revenueData?.ticketRevenue || 0;
+  const membershipRevenue = revenueData?.membershipRevenue || 0;
+  const giftShopRevenue = revenueData?.giftShopRevenue || 0;
+  const foodRevenue = revenueData?.foodRevenue || 0;
+  const totalRevenue = revenueData?.totalRevenue || 0;
 
-  // Calculate membership revenue from memberships created in date range
-  const membershipRevenue = filteredMemberships.reduce(
-    (sum, m) => sum + m.Price,
-    0
-  );
-
-  // Calculate membership revenue from actual membership purchases (Item_ID 9000)
-  const membershipPurchaseRevenue = purchaseItems
-    .filter((pi) => {
-      const purchase = purchases.find((p) => p.Purchase_ID === pi.Purchase_ID);
-      return (
-        pi.Item_ID === 9000 &&
-        purchase &&
-        filterByDateRange(purchase.Purchase_Date)
-      );
-    })
-    .reduce((sum, pi) => sum + pi.Unit_Price * pi.Quantity, 0);
-
-  // Calculate gift shop revenue from actual purchase items (excluding memberships)
-  const giftShopRevenue = purchaseItems
-    .filter((pi) => {
-      const purchase = purchases.find((p) => p.Purchase_ID === pi.Purchase_ID);
-      return (
-        pi.Item_ID !== 9000 &&
-        purchase &&
-        filterByDateRange(purchase.Purchase_Date)
-      );
-    })
-    .reduce((sum, pi) => sum + pi.Unit_Price * pi.Quantity, 0);
-
-  // Calculate food revenue from actual concession purchase items
-  const foodRevenue = purchaseConcessionItems
-    .filter((pci) => {
-      const purchase = purchases.find((p) => p.Purchase_ID === pci.Purchase_ID);
-      return purchase && filterByDateRange(purchase.Purchase_Date);
-    })
-    .reduce((sum, pci) => sum + pci.Unit_Price * pci.Quantity, 0);
-
-  const totalRevenue =
-    ticketRevenue + membershipPurchaseRevenue + giftShopRevenue + foodRevenue;
-  const totalAnimals = animals.length;
+  const totalAnimals = displayAnimals.length;
   const totalEmployees = allEmployees.length;
-  const activeMemb = memberships.filter((m) => m.Membership_Status).length;
+  const activeMemb = allMemberships.filter((m) => m.Membership_Status).length;
 
   // Revenue Breakdown
   const revenueBreakdown = [
@@ -308,7 +338,7 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
     },
     {
       category: "Memberships",
-      amount: membershipPurchaseRevenue,
+      amount: membershipRevenue,
       color: "bg-purple-600",
       icon: Crown,
     },
@@ -326,156 +356,140 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
     },
   ];
 
-  // Ticket stats - sum quantities instead of counting records
+  // Ticket stats from revenue data
   const ticketStats = useMemo(
     () => [
       {
         type: "Adult",
-        sold: filteredTickets
-          .filter((t) => t.Ticket_Type === "Adult")
-          .reduce((sum, t) => sum + (Number(t.Quantity) || 1), 0),
+        sold: revenueData?.ticketSales?.adultTickets || 0,
       },
       {
         type: "Child",
-        sold: filteredTickets
-          .filter((t) => t.Ticket_Type === "Child")
-          .reduce((sum, t) => sum + (Number(t.Quantity) || 1), 0),
+        sold: revenueData?.ticketSales?.childTickets || 0,
       },
       {
         type: "Senior",
-        sold: filteredTickets
-          .filter((t) => t.Ticket_Type === "Senior")
-          .reduce((sum, t) => sum + (Number(t.Quantity) || 1), 0),
+        sold: revenueData?.ticketSales?.seniorTickets || 0,
       },
       {
         type: "Student",
-        sold: filteredTickets
-          .filter((t) => t.Ticket_Type === "Student")
-          .reduce((sum, t) => sum + (Number(t.Quantity) || 1), 0),
+        sold: revenueData?.ticketSales?.studentTickets || 0,
       },
     ],
-    [filteredTickets]
+    [revenueData]
   );
 
-  const handleDeleteEmployee = (emp) => {
-    // Check if employee is a supervisor
-    const supervisedZone = allLocations.find(
-      (loc) => loc.Supervisor_ID === emp.Employee_ID
-    );
-    if (supervisedZone) {
-      // Remove supervisor assignment
-      setAllLocations(
-        allLocations.map((loc) =>
-          loc.Supervisor_ID === emp.Employee_ID
-            ? { ...loc, Supervisor_ID: null }
-            : loc
-        )
-      );
+  const handleDeleteEmployee = async (emp) => {
+    try {
+      await employeeAPI.delete(emp.Employee_ID);
+
+      // Reload employees and locations
+      const [employeesData, locationsData] = await Promise.all([
+        employeeAPI.getAll(),
+        locationAPI.getAll(),
+      ]);
+
+      setAllEmployees(employeesData);
+      setAllLocations(locationsData);
+      setDeleteConfirmEmployee(null);
+      toast.success(`Successfully removed ${emp.First_Name} ${emp.Last_Name}`);
+    } catch (error) {
+      console.error("Error deleting employee:", error);
+      toast.error("Failed to delete employee");
     }
-
-    setAllEmployees(
-      allEmployees.filter((e) => e.Employee_ID !== emp.Employee_ID)
-    );
-    setDeleteConfirmEmployee(null);
   };
 
-  const handleAddEmployee = (formData) => {
-    // Find the location object for the selected zone
-    const zoneLocation = allLocations.find((loc) => loc.Zone === formData.zone);
+  const handleAddEmployee = async (formData) => {
+    try {
+      // Find the location object for the selected zone
+      const zoneLocation = allLocations.find(
+        (loc) => loc.Zone === formData.zone
+      );
 
-    const newEmployee = {
-      Employee_ID: Math.max(...allEmployees.map((e) => e.Employee_ID)) + 1,
-      First_Name: formData.firstName,
-      Last_Name: formData.lastName,
-      Birthdate: formData.birthdate,
-      Sex: formData.sex,
-      Job_ID: parseInt(formData.jobId),
-      Salary: salaries[parseInt(formData.jobId)],
-      Email: formData.email,
-      Password: "password123",
-      Address: formData.address,
-      Zone: formData.zone,
-      Supervisor_ID: zoneLocation ? zoneLocation.Supervisor_ID : null,
-      Job_Title: jobTitles.find((j) => j.Job_ID === parseInt(formData.jobId)),
-    };
+      const employeeData = {
+        firstName: formData.firstName,
+        lastName: formData.lastName,
+        birthdate: formData.birthdate,
+        sex: formData.sex,
+        jobId: parseInt(formData.jobId),
+        salary: salaries[parseInt(formData.jobId)],
+        email: formData.email,
+        address: formData.address,
+        supervisorId: zoneLocation ? zoneLocation.Supervisor_ID : null,
+      };
 
-    setAllEmployees([...allEmployees, newEmployee]);
-    setIsAddEmployeeOpen(false);
+      await employeeAPI.create(employeeData);
+
+      // Reload employees
+      const employeesData = await employeeAPI.getAll();
+      setAllEmployees(employeesData);
+
+      setIsAddEmployeeOpen(false);
+      toast.success(
+        `Successfully added ${formData.firstName} ${formData.lastName}`
+      );
+    } catch (error) {
+      console.error("Error adding employee:", error);
+      toast.error("Failed to add employee");
+    }
   };
 
-  const handleAssignSupervisor = (zoneId, supervisorId) => {
-    // Update location with new supervisor
-    setAllLocations(
-      allLocations.map((loc) =>
-        loc.Location_ID === zoneId
-          ? {
-              ...loc,
-              Supervisor_ID: supervisorId,
-            }
-          : loc
-      )
-    );
+  const handleAssignSupervisor = async (zoneId, supervisorId) => {
+    try {
+      await locationAPI.updateSupervisor(zoneId, supervisorId);
 
-    // Update employee salaries based on supervisor status
-    setAllEmployees(
-      allEmployees.map((emp) => {
-        const isSupervisor =
-          supervisorId === emp.Employee_ID ||
-          allLocations.some(
-            (loc) =>
-              loc.Location_ID !== zoneId &&
-              loc.Supervisor_ID === emp.Employee_ID
-          );
-        const wasSupervisorOfThisZone =
-          selectedZone?.Supervisor_ID === emp.Employee_ID;
+      // Reload locations and employees
+      const [locationsData, employeesData] = await Promise.all([
+        locationAPI.getAll(),
+        employeeAPI.getAll(),
+      ]);
 
-        if (supervisorId === emp.Employee_ID) {
-          // This employee is being assigned as supervisor, give them supervisor salary
-          return { ...emp, Salary: salaries[2] };
-        } else if (
-          wasSupervisorOfThisZone &&
-          !allLocations.some(
-            (loc) =>
-              loc.Location_ID !== zoneId &&
-              loc.Supervisor_ID === emp.Employee_ID
-          )
-        ) {
-          // This employee was removed as supervisor and is not supervising other zones, revert to their job salary
-          return { ...emp, Salary: salaries[emp.Job_ID] || emp.Salary };
-        }
-        return emp;
-      })
-    );
-
-    setIsManageZoneOpen(false);
-    setSelectedZone(null);
-    setSupervisorSearch("");
+      setAllLocations(locationsData);
+      setAllEmployees(employeesData);
+      setIsManageZoneOpen(false);
+      setSelectedZone(null);
+      setSupervisorSearch("");
+      toast.success("Supervisor assigned successfully!");
+    } catch (error) {
+      console.error("Error assigning supervisor:", error);
+      toast.error("Failed to assign supervisor");
+    }
   };
 
-  const handleSalarySave = () => {
-    // Update actual salary state
-    setSalaries({ ...tempSalaries });
+  const handleSalarySave = async () => {
+    try {
+      // Update actual salary state
+      setSalaries({ ...tempSalaries });
 
-    // Update all employees with new salaries
-    setAllEmployees(
-      allEmployees.map((emp) => {
+      // Update all employees with new salaries
+      const updatePromises = allEmployees.map((emp) => {
         // Check if this employee is a supervisor of any zone
         const isSupervisor = allLocations.some(
           (loc) => loc.Supervisor_ID === emp.Employee_ID
         );
 
-        if (isSupervisor) {
-          // Employee is a supervisor, use supervisor salary
-          return { ...emp, Salary: tempSalaries[2] };
-        } else {
-          // Use the salary for their job type
-          return { ...emp, Salary: tempSalaries[emp.Job_ID] || emp.Salary };
-        }
-      })
-    );
+        const newSalary = isSupervisor
+          ? tempSalaries[2]
+          : tempSalaries[emp.Job_ID];
 
-    setIsSalaryManagementOpen(false);
-    toast.success("Salaries updated successfully!");
+        if (newSalary && newSalary !== emp.Salary) {
+          return employeeAPI.updateSalary(emp.Employee_ID, newSalary);
+        }
+        return Promise.resolve();
+      });
+
+      await Promise.all(updatePromises);
+
+      // Reload employees
+      const employeesData = await employeeAPI.getAll();
+      setAllEmployees(employeesData);
+
+      setIsSalaryManagementOpen(false);
+      toast.success("Salaries updated successfully!");
+    } catch (error) {
+      console.error("Error updating salaries:", error);
+      toast.error("Failed to update salaries");
+    }
   };
 
   const handleSalaryDialogOpen = (open) => {
@@ -504,58 +518,115 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
     toast.success("Pricing updated successfully!");
   };
 
-  const handleAddAnimal = (formData) => {
-    const newAnimalId = Math.max(...animals.map((a) => a.Animal_ID)) + 1;
-    const enclosureId = parseInt(formData.enclosureId);
-    const enclosure = enclosures.find((e) => e.Enclosure_ID === enclosureId);
+  const handleAddAnimal = async (formData) => {
+    try {
+      const animalData = {
+        name: formData.name,
+        species: formData.species,
+        gender: formData.gender,
+        weight: parseFloat(formData.weight),
+        birthday: formData.birthday,
+        healthStatus: formData.healthStatus || "Good",
+        isVaccinated: formData.isVaccinated || false,
+        enclosureId: parseInt(formData.enclosureId),
+      };
 
-    const newAnimal = {
-      Animal_ID: newAnimalId,
-      Animal_Name: formData.name,
-      Species: formData.species,
-      Gender: formData.gender,
-      Weight: parseFloat(formData.weight),
-      Birthday: formData.birthday,
-      Health_Status: formData.healthStatus || "Good",
-      Is_Vaccinated: formData.isVaccinated || false,
-      Enclosure_ID: enclosureId,
-      Enclosure: enclosure,
-    };
+      const newAnimal = await animalAPI.create(animalData);
 
-    addAnimal(newAnimal);
-    setIsAddAnimalOpen(false);
-    toast.success(
-      `Successfully added ${formData.name} to ${
-        enclosure?.Enclosure_Name || "the zoo"
-      }!`
-    );
+      // Reload animals
+      const animalsData = await animalAPI.getAll();
+      setAllAnimalsDB(animalsData);
+
+      // Also add to context for immediate UI update
+      addAnimal({
+        Animal_ID: newAnimal.Animal_ID,
+        Animal_Name: newAnimal.Animal_Name,
+        Species: newAnimal.Species,
+        Gender: newAnimal.Gender,
+        Weight: newAnimal.Weight,
+        Birthday: newAnimal.Birthday,
+        Health_Status: newAnimal.Health_Status,
+        Is_Vaccinated: newAnimal.Is_Vaccinated,
+        Enclosure_ID: newAnimal.Enclosure_ID,
+        Enclosure: allEnclosures.find(
+          (e) => e.Enclosure_ID === newAnimal.Enclosure_ID
+        ),
+      });
+
+      setIsAddAnimalOpen(false);
+      toast.success(
+        `Successfully added ${formData.name} to ${
+          newAnimal.Enclosure_Name || "the zoo"
+        }!`
+      );
+    } catch (error) {
+      console.error("Error adding animal:", error);
+      toast.error("Failed to add animal");
+    }
   };
 
-  const handleUpdateAnimal = (formData) => {
+  const handleUpdateAnimal = async (formData) => {
     if (!editingAnimal) return;
 
-    const enclosureId = parseInt(formData.enclosureId);
-    const enclosure = enclosures.find((e) => e.Enclosure_ID === enclosureId);
+    try {
+      const animalData = {
+        name: formData.name,
+        species: formData.species,
+        gender: formData.gender,
+        weight: parseFloat(formData.weight),
+        birthday: formData.birthday,
+        healthStatus: formData.healthStatus,
+        isVaccinated: formData.isVaccinated,
+        enclosureId: parseInt(formData.enclosureId),
+      };
 
-    updateAnimal(editingAnimal.Animal_ID, {
-      Animal_Name: formData.name,
-      Species: formData.species,
-      Gender: formData.gender,
-      Weight: parseFloat(formData.weight),
-      Birthday: formData.birthday,
-      Health_Status: formData.healthStatus,
-      Is_Vaccinated: formData.isVaccinated,
-      Enclosure_ID: enclosureId,
-      Enclosure: enclosure,
-    });
-    setEditingAnimal(null);
-    toast.success(`Successfully updated ${formData.name}'s information!`);
+      await animalAPI.update(editingAnimal.Animal_ID, animalData);
+
+      // Reload animals
+      const animalsData = await animalAPI.getAll();
+      setAllAnimalsDB(animalsData);
+
+      // Also update context
+      const enclosure = allEnclosures.find(
+        (e) => e.Enclosure_ID === animalData.enclosureId
+      );
+      updateAnimal(editingAnimal.Animal_ID, {
+        Animal_Name: animalData.name,
+        Species: animalData.species,
+        Gender: animalData.gender,
+        Weight: animalData.weight,
+        Birthday: animalData.birthday,
+        Health_Status: animalData.healthStatus,
+        Is_Vaccinated: animalData.isVaccinated,
+        Enclosure_ID: animalData.enclosureId,
+        Enclosure: enclosure,
+      });
+
+      setEditingAnimal(null);
+      toast.success(`Successfully updated ${formData.name}'s information!`);
+    } catch (error) {
+      console.error("Error updating animal:", error);
+      toast.error("Failed to update animal");
+    }
   };
 
-  const handleDeleteAnimal = (animal) => {
-    deleteAnimal(animal.Animal_ID);
-    setDeleteConfirmAnimal(null);
-    toast.success(`Successfully removed ${animal.Animal_Name} from the zoo.`);
+  const handleDeleteAnimal = async (animal) => {
+    try {
+      await animalAPI.delete(animal.Animal_ID);
+
+      // Reload animals
+      const animalsData = await animalAPI.getAll();
+      setAllAnimalsDB(animalsData);
+
+      // Also delete from context
+      deleteAnimal(animal.Animal_ID);
+
+      setDeleteConfirmAnimal(null);
+      toast.success(`Successfully removed ${animal.Animal_Name} from the zoo.`);
+    } catch (error) {
+      console.error("Error deleting animal:", error);
+      toast.error("Failed to delete animal");
+    }
   };
 
   const getRangeLabel = () => {
@@ -648,6 +719,16 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
           </div>
         </div>
       </header>
+
+      {/* Loading Indicator */}
+      {isLoading && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg shadow-lg">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-600 mx-auto"></div>
+            <p className="mt-4 text-gray-600">Loading data from database...</p>
+          </div>
+        </div>
+      )}
 
       {/* Main Content */}
       <div className="container mx-auto px-6 py-12 space-y-8">
@@ -1339,7 +1420,7 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
               isOpen={isAddAnimalOpen}
               onOpenChange={setIsAddAnimalOpen}
               onAdd={handleAddAnimal}
-              enclosures={enclosures}
+              enclosures={allEnclosures}
             />
           </div>
           <Card>
@@ -1349,8 +1430,8 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
               </p>
               <ScrollArea className="h-[400px]">
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-                  {animals.map((animal, index) => {
-                    const enclosure = enclosures.find(
+                  {displayAnimals.map((animal, index) => {
+                    const enclosure = allEnclosures.find(
                       (e) => e.Enclosure_ID === animal.Enclosure_ID
                     );
                     // Generate a mock date added (based on animal ID for consistency)
@@ -1569,7 +1650,7 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
             setEditingAnimal(null);
             setDeleteConfirmAnimal(animal);
           }}
-          enclosures={enclosures}
+          enclosures={allEnclosures}
         />
 
         {/* Delete Animal Confirmation Dialog */}
