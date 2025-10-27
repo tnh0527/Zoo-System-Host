@@ -9,6 +9,11 @@ import {
   updateEmployeeSalary,
   getAllLocations,
   updateLocationSupervisor,
+  getAllExhibits,
+  getExhibitById,
+  addExhibit,
+  updateExhibit,
+  deleteExhibit,
   getAllAnimals,
   getAnimalById,
   addAnimal,
@@ -41,12 +46,77 @@ router.patch("/employees/:id/salary", updateEmployeeSalary);
 router.get("/locations", getAllLocations);
 router.patch("/locations/:id/supervisor", updateLocationSupervisor);
 
+// Exhibit routes
+router.get("/exhibits", getAllExhibits);
+router.get("/exhibits/:id", getExhibitById);
+router.post("/exhibits", addExhibit);
+router.put("/exhibits/:id", updateExhibit);
+router.delete("/exhibits/:id", deleteExhibit);
+
 // Animal routes
 router.get("/animals", getAllAnimals);
 router.get("/animals/:id", getAnimalById);
 router.post("/animals", addAnimal);
 router.put("/animals/:id", updateAnimal);
 router.delete("/animals/:id", deleteAnimal);
+
+// Exhibit image upload route
+router.post(
+  "/exhibits/:id/upload-image",
+  upload.single("image"),
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      if (!req.file) {
+        return res.status(400).json({ error: "No image file provided" });
+      }
+
+      // Import db connection and deleteImageFile
+      const db = (await import("../config/database.js")).default;
+      const { deleteImageFile } = await import("../middleware/upload.js");
+
+      // Get current image URL to delete old file
+      const [currentExhibit] = await db.query(
+        "SELECT Image_URL FROM Exhibit WHERE Exhibit_ID = ?",
+        [id]
+      );
+
+      // Delete old image file if exists
+      if (currentExhibit[0]?.Image_URL) {
+        try {
+          // Extract filename from URL
+          const oldUrl = currentExhibit[0].Image_URL;
+          const filename = oldUrl.split("/").pop();
+          deleteImageFile("exhibits", filename);
+        } catch (err) {
+          console.error("Error deleting old image:", err);
+          // Continue even if delete fails
+        }
+      }
+
+      // Construct the new image URL
+      const imageUrl = `${req.protocol}://${req.get("host")}/uploads/exhibits/${
+        req.file.filename
+      }`;
+
+      // Update exhibit with new image URL
+      await db.query("UPDATE Exhibit SET Image_URL = ? WHERE Exhibit_ID = ?", [
+        imageUrl,
+        id,
+      ]);
+
+      res.json({
+        success: true,
+        imageUrl: imageUrl,
+        filename: req.file.filename,
+      });
+    } catch (error) {
+      console.error("Error uploading exhibit image:", error);
+      res.status(500).json({ error: "Failed to upload image" });
+    }
+  }
+);
 
 // Animal image upload route
 router.post(
@@ -76,7 +146,7 @@ router.post(
           // Extract filename from URL
           const oldUrl = currentAnimal[0].Image_URL;
           const filename = oldUrl.split("/").pop();
-          deleteImageFile(filename);
+          deleteImageFile("animals", filename);
         } catch (err) {
           console.error("Error deleting old image:", err);
           // Continue even if delete fails

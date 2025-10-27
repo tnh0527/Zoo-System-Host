@@ -76,10 +76,15 @@ import {
 import { useData } from "../data/DataContext";
 import { toast } from "sonner";
 import { ZooLogo } from "../components/ZooLogo";
+import {
+  AddExhibitDialog,
+  EditExhibitDialog,
+} from "../components/ExhibitDialogs";
 import { usePricing } from "../data/PricingContext";
 import {
   employeeAPI,
   locationAPI,
+  exhibitAPI,
   animalAPI,
   analyticsAPI,
   referenceAPI,
@@ -110,6 +115,7 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
   } = usePricing();
   const [allEmployees, setAllEmployees] = useState([]);
   const [allLocations, setAllLocations] = useState([]);
+  const [allExhibitsDB, setAllExhibitsDB] = useState([]);
   const [allAnimalsDB, setAllAnimalsDB] = useState([]);
   const [allJobTitles, setAllJobTitles] = useState([]);
   const [allEnclosures, setAllEnclosures] = useState([]);
@@ -124,6 +130,9 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
   const [viewZoneEmployees, setViewZoneEmployees] = useState(null);
   const [isSalaryManagementOpen, setIsSalaryManagementOpen] = useState(false);
   const [supervisorSearch, setSupervisorSearch] = useState("");
+  const [isAddExhibitOpen, setIsAddExhibitOpen] = useState(false);
+  const [deleteConfirmExhibit, setDeleteConfirmExhibit] = useState(null);
+  const [editingExhibit, setEditingExhibit] = useState(null);
   const [isAddAnimalOpen, setIsAddAnimalOpen] = useState(false);
   const [deleteConfirmAnimal, setDeleteConfirmAnimal] = useState(null);
   const [editingAnimal, setEditingAnimal] = useState(null);
@@ -167,6 +176,7 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
       const [
         employeesData,
         locationsData,
+        exhibitsData,
         animalsData,
         jobTitlesData,
         enclosuresData,
@@ -174,6 +184,7 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
       ] = await Promise.all([
         employeeAPI.getAll(),
         locationAPI.getAll(),
+        exhibitAPI.getAll(),
         animalAPI.getAll(),
         referenceAPI.getJobTitles(),
         referenceAPI.getEnclosures(),
@@ -182,6 +193,7 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
 
       setAllEmployees(employeesData);
       setAllLocations(locationsData);
+      setAllExhibitsDB(exhibitsData);
       setAllAnimalsDB(animalsData);
       setAllJobTitles(jobTitlesData);
       setAllEnclosures(enclosuresData);
@@ -526,6 +538,140 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
       toast.error("Failed to update pricing");
     }
   };
+
+  // ============================================
+  // EXHIBIT HANDLERS
+  // ============================================
+
+  const handleAddExhibit = async (formData) => {
+    try {
+      const exhibitData = {
+        name: formData.name,
+        description: formData.description,
+        capacity: formData.capacity ? parseInt(formData.capacity) : null,
+        displayTime: formData.displayTime || null,
+        locationId: formData.locationId ? parseInt(formData.locationId) : null,
+      };
+
+      const newExhibit = await exhibitAPI.create(exhibitData);
+
+      // Upload image if provided
+      if (formData.imageFile) {
+        const imageFormData = new FormData();
+        imageFormData.append("image", formData.imageFile);
+
+        const imageResponse = await fetch(
+          `http://localhost:5000/api/admin/exhibits/${newExhibit.Exhibit_ID}/upload-image`,
+          {
+            method: "POST",
+            body: imageFormData,
+          }
+        );
+
+        if (!imageResponse.ok) {
+          const errorData = await imageResponse.json();
+          console.error("Image upload failed:", errorData);
+          toast.error("Exhibit added but image upload failed");
+        }
+      }
+
+      // Reload exhibits to get fresh data including image URL
+      const exhibitsData = await exhibitAPI.getAll();
+      setAllExhibitsDB(exhibitsData);
+
+      setIsAddExhibitOpen(false);
+      toast.success(`Successfully added exhibit: ${formData.name}!`);
+    } catch (error) {
+      console.error("Error adding exhibit:", error);
+      toast.error("Failed to add exhibit");
+    }
+  };
+
+  const handleUpdateExhibit = async (formData) => {
+    if (!editingExhibit) return;
+
+    try {
+      // Build update object with only changed fields
+      const exhibitData = {};
+
+      if (formData.name !== editingExhibit.exhibit_Name) {
+        exhibitData.name = formData.name;
+      }
+      if (formData.description !== editingExhibit.exhibit_Description) {
+        exhibitData.description = formData.description;
+      }
+      if (formData.capacity !== (editingExhibit.Capacity || "").toString()) {
+        exhibitData.capacity = formData.capacity
+          ? parseInt(formData.capacity)
+          : null;
+      }
+      if (formData.displayTime !== (editingExhibit.Display_Time || "")) {
+        exhibitData.displayTime = formData.displayTime || null;
+      }
+      if (
+        formData.locationId !== (editingExhibit.Location_ID || "").toString()
+      ) {
+        exhibitData.locationId = formData.locationId
+          ? parseInt(formData.locationId)
+          : null;
+      }
+
+      // Only send update if there are changes to text fields
+      if (Object.keys(exhibitData).length > 0) {
+        await exhibitAPI.update(editingExhibit.Exhibit_ID, exhibitData);
+      }
+
+      // Upload new image if provided
+      if (formData.imageFile) {
+        const imageFormData = new FormData();
+        imageFormData.append("image", formData.imageFile);
+
+        const imageResponse = await fetch(
+          `http://localhost:5000/api/admin/exhibits/${editingExhibit.Exhibit_ID}/upload-image`,
+          {
+            method: "POST",
+            body: imageFormData,
+          }
+        );
+
+        if (!imageResponse.ok) {
+          const errorData = await imageResponse.json();
+          console.error("Image upload failed:", errorData);
+          toast.error("Exhibit updated but image upload failed");
+        }
+      }
+
+      // Reload exhibits to get fresh data including updated image URL
+      const exhibitsData = await exhibitAPI.getAll();
+      setAllExhibitsDB(exhibitsData);
+
+      setEditingExhibit(null);
+      toast.success(`Successfully updated exhibit: ${formData.name}!`);
+    } catch (error) {
+      console.error("Error updating exhibit:", error);
+      toast.error("Failed to update exhibit");
+    }
+  };
+
+  const handleDeleteExhibit = async (exhibit) => {
+    try {
+      await exhibitAPI.delete(exhibit.Exhibit_ID);
+
+      // Reload exhibits
+      const exhibitsData = await exhibitAPI.getAll();
+      setAllExhibitsDB(exhibitsData);
+
+      setDeleteConfirmExhibit(null);
+      toast.success(`Successfully removed exhibit: ${exhibit.exhibit_Name}`);
+    } catch (error) {
+      console.error("Error deleting exhibit:", error);
+      toast.error("Failed to delete exhibit");
+    }
+  };
+
+  // ============================================
+  // ANIMAL HANDLERS
+  // ============================================
 
   const handleAddAnimal = async (formData) => {
     try {
@@ -1469,6 +1615,80 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
           </Card>
         </section>
 
+        {/* Exhibit Management */}
+        <section id="exhibits">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-2xl">🏛️ Exhibit Management</h2>
+            <AddExhibitDialog
+              isOpen={isAddExhibitOpen}
+              onOpenChange={setIsAddExhibitOpen}
+              onAdd={handleAddExhibit}
+              locations={allLocations}
+            />
+          </div>
+          <Card>
+            <CardContent className="pt-6">
+              <p className="text-sm text-gray-600 mb-4">
+                Manage zoo exhibits and displays
+              </p>
+              <ScrollArea className="h-[400px]">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                  {allExhibitsDB.map((exhibit) => (
+                    <Card
+                      key={exhibit.Exhibit_ID}
+                      className="p-4 hover:shadow-md transition-shadow"
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-2">
+                            <h3 className="font-semibold text-lg">
+                              {exhibit.exhibit_Name}
+                            </h3>
+                            {exhibit.Location_Description && (
+                              <Badge variant="outline" className="text-xs">
+                                {exhibit.Zone}
+                              </Badge>
+                            )}
+                          </div>
+                          <p className="text-sm text-gray-600 mb-2">
+                            {exhibit.exhibit_Description || "No description"}
+                          </p>
+                          <div className="flex flex-wrap gap-2 text-xs text-gray-500">
+                            {exhibit.Capacity && (
+                              <span>Capacity: {exhibit.Capacity}</span>
+                            )}
+                            {exhibit.Display_Time && (
+                              <span>• {exhibit.Display_Time}</span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex gap-1 ml-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setEditingExhibit(exhibit)}
+                            className="cursor-pointer"
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setDeleteConfirmExhibit(exhibit)}
+                            className="text-red-600 hover:text-red-700 hover:bg-red-50 cursor-pointer"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    </Card>
+                  ))}
+                </div>
+              </ScrollArea>
+            </CardContent>
+          </Card>
+        </section>
+
         {/* Animal Management */}
         <section id="animals">
           <div className="flex items-center justify-between mb-6">
@@ -1696,6 +1916,19 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+
+        {/* Edit Exhibit Dialog */}
+        <EditExhibitDialog
+          exhibit={editingExhibit}
+          isOpen={editingExhibit !== null}
+          onOpenChange={(open) => !open && setEditingExhibit(null)}
+          onUpdate={handleUpdateExhibit}
+          onDelete={(exhibit) => {
+            setEditingExhibit(null);
+            setDeleteConfirmExhibit(exhibit);
+          }}
+          locations={allLocations}
+        />
 
         {/* Edit Animal Dialog */}
         <EditAnimalDialog

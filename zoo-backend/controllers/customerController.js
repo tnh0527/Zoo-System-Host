@@ -14,6 +14,7 @@ export const getAllExhibits = async (req, res) => {
         e.Capacity,
         e.Location_ID,
         e.Display_Time,
+        e.Image_URL,
         l.Location_Description,
         l.Zone as Zone_Name
       FROM Exhibit e
@@ -42,6 +43,7 @@ export const getExhibitById = async (req, res) => {
         e.Capacity,
         e.Location_ID,
         e.Display_Time,
+        e.Image_URL,
         l.Location_Description,
         l.Zone as Zone_Name
       FROM Exhibit e
@@ -87,7 +89,9 @@ export const getAllActivities = async (req, res) => {
   } catch (error) {
     console.error("Error fetching activities:", error);
     console.error("SQL Error details:", error.sqlMessage);
-    res.status(500).json({ error: "Failed to fetch activities", details: error.message });
+    res
+      .status(500)
+      .json({ error: "Failed to fetch activities", details: error.message });
   }
 };
 
@@ -117,7 +121,12 @@ export const getActivitiesByExhibit = async (req, res) => {
   } catch (error) {
     console.error("Error fetching exhibit activities:", error);
     console.error("SQL Error details:", error.sqlMessage);
-    res.status(500).json({ error: "Failed to fetch exhibit activities", details: error.message });
+    res
+      .status(500)
+      .json({
+        error: "Failed to fetch exhibit activities",
+        details: error.message,
+      });
   }
 };
 
@@ -158,7 +167,12 @@ export const getTodaysSchedule = async (req, res) => {
   } catch (error) {
     console.error("Error fetching today's schedule:", error);
     console.error("SQL Error details:", error.sqlMessage);
-    res.status(500).json({ error: "Failed to fetch today's schedule", details: error.message });
+    res
+      .status(500)
+      .json({
+        error: "Failed to fetch today's schedule",
+        details: error.message,
+      });
   }
 };
 

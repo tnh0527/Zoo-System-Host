@@ -254,6 +254,190 @@ export const updateLocationSupervisor = async (req, res) => {
 };
 
 // ============================================
+// EXHIBIT MANAGEMENT
+// ============================================
+
+export const getAllExhibits = async (req, res) => {
+  try {
+    const [exhibits] = await db.query(`
+      SELECT 
+        e.*,
+        l.Location_Description,
+        l.Zone
+      FROM Exhibit e
+      LEFT JOIN Location l ON e.Location_ID = l.Location_ID
+      ORDER BY e.exhibit_Name
+    `);
+    res.json(exhibits);
+  } catch (error) {
+    console.error("Error fetching exhibits:", error);
+    res.status(500).json({ error: "Failed to fetch exhibits" });
+  }
+};
+
+export const getExhibitById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const [exhibits] = await db.query(
+      `
+      SELECT 
+        e.*,
+        l.Location_Description,
+        l.Zone
+      FROM Exhibit e
+      LEFT JOIN Location l ON e.Location_ID = l.Location_ID
+      WHERE e.Exhibit_ID = ?
+    `,
+      [id]
+    );
+
+    if (exhibits.length === 0) {
+      return res.status(404).json({ error: "Exhibit not found" });
+    }
+
+    res.json(exhibits[0]);
+  } catch (error) {
+    console.error("Error fetching exhibit:", error);
+    res.status(500).json({ error: "Failed to fetch exhibit" });
+  }
+};
+
+export const addExhibit = async (req, res) => {
+  try {
+    const { name, description, capacity, displayTime, locationId } = req.body;
+
+    const [result] = await db.query(
+      `INSERT INTO Exhibit (exhibit_Name, exhibit_Description, Capacity, Display_Time, Location_ID) 
+       VALUES (?, ?, ?, ?, ?)`,
+      [
+        name,
+        description,
+        capacity || null,
+        displayTime || null,
+        locationId || null,
+      ]
+    );
+
+    const [newExhibit] = await db.query(
+      `
+      SELECT 
+        e.*,
+        l.Location_Description,
+        l.Zone
+      FROM Exhibit e
+      LEFT JOIN Location l ON e.Location_ID = l.Location_ID
+      WHERE e.Exhibit_ID = ?
+    `,
+      [result.insertId]
+    );
+
+    res.status(201).json(newExhibit[0]);
+  } catch (error) {
+    console.error("Error adding exhibit:", error);
+    res.status(500).json({ error: "Failed to add exhibit" });
+  }
+};
+
+export const updateExhibit = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, description, capacity, displayTime, locationId, imageUrl } =
+      req.body;
+
+    // Build dynamic UPDATE query with only provided fields
+    const updates = [];
+    const values = [];
+
+    if (name !== undefined) {
+      updates.push("exhibit_Name = ?");
+      values.push(name);
+    }
+    if (description !== undefined) {
+      updates.push("exhibit_Description = ?");
+      values.push(description);
+    }
+    if (capacity !== undefined) {
+      updates.push("Capacity = ?");
+      values.push(capacity);
+    }
+    if (displayTime !== undefined) {
+      updates.push("Display_Time = ?");
+      values.push(displayTime);
+    }
+    if (locationId !== undefined) {
+      updates.push("Location_ID = ?");
+      values.push(locationId);
+    }
+    if (imageUrl !== undefined) {
+      updates.push("Image_URL = ?");
+      values.push(imageUrl || null);
+    }
+
+    // Only update if there are fields to update
+    if (updates.length > 0) {
+      values.push(id);
+      await db.query(
+        `UPDATE Exhibit SET ${updates.join(", ")} WHERE Exhibit_ID = ?`,
+        values
+      );
+    }
+
+    // Fetch updated exhibit
+    const [updatedExhibit] = await db.query(
+      `
+      SELECT 
+        e.*,
+        l.Location_Description,
+        l.Zone
+      FROM Exhibit e
+      LEFT JOIN Location l ON e.Location_ID = l.Location_ID
+      WHERE e.Exhibit_ID = ?
+    `,
+      [id]
+    );
+
+    res.json(updatedExhibit[0]);
+  } catch (error) {
+    console.error("Error updating exhibit:", error);
+    res.status(500).json({ error: "Failed to update exhibit" });
+  }
+};
+
+export const deleteExhibit = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Check if exhibit exists and get its image URL for cleanup
+    const [exhibits] = await db.query(
+      "SELECT Image_URL FROM Exhibit WHERE Exhibit_ID = ?",
+      [id]
+    );
+
+    if (exhibits.length === 0) {
+      return res.status(404).json({ error: "Exhibit not found" });
+    }
+
+    // Delete the exhibit
+    await db.query("DELETE FROM Exhibit WHERE Exhibit_ID = ?", [id]);
+
+    // Clean up image file if exists
+    if (exhibits[0].Image_URL) {
+      const imagePath = exhibits[0].Image_URL.replace(
+        "http://localhost:3000",
+        ""
+      );
+      const filename = imagePath.split("/").pop();
+      deleteImageFile("exhibits", filename);
+    }
+
+    res.json({ message: "Exhibit deleted successfully" });
+  } catch (error) {
+    console.error("Error deleting exhibit:", error);
+    res.status(500).json({ error: "Failed to delete exhibit" });
+  }
+};
+
+// ============================================
 // ANIMAL MANAGEMENT
 // ============================================
 
