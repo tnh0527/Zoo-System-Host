@@ -164,23 +164,66 @@ export const deleteEmployee = async (req, res) => {
   try {
     const { id } = req.params;
 
-    // First, remove this employee as supervisor from any locations
-    await db.query(
-      `
-      UPDATE Location 
-      SET Supervisor_ID = NULL 
-      WHERE Supervisor_ID = ?
-    `,
+    // Check if employee exists
+    const [employees] = await db.query(
+      "SELECT * FROM Employee WHERE Employee_ID = ?",
       [id]
     );
 
-    // Then delete the employee
-    await db.query("DELETE FROM Employee WHERE Employee_ID = ?", [id]);
+    if (employees.length === 0) {
+      return res.status(404).json({ error: "Employee not found" });
+    }
 
-    res.json({ message: "Employee deleted successfully" });
+    // Note: If you've run the migration with SET NULL constraints,
+    // these manual updates are not strictly necessary but provide safety
+
+    // Remove this employee as supervisor from any locations
+    await db.query(
+      "UPDATE Location SET Supervisor_ID = NULL WHERE Supervisor_ID = ?",
+      [id]
+    );
+
+    // Update any subordinate employees to have no supervisor
+    await db.query(
+      "UPDATE Employee SET Supervisor_ID = NULL WHERE Supervisor_ID = ?",
+      [id]
+    );
+
+    // Delete the employee
+    // If foreign keys are SET NULL, related records will be preserved
+    // If foreign keys are CASCADE, related records will be deleted
+    const [result] = await db.query(
+      "DELETE FROM Employee WHERE Employee_ID = ?",
+      [id]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: "Employee not found" });
+    }
+
+    res.json({
+      message: "Employee deleted successfully",
+      deletedId: id,
+    });
   } catch (error) {
     console.error("Error deleting employee:", error);
-    res.status(500).json({ error: "Failed to delete employee" });
+
+    // Check for foreign key constraint errors
+    if (
+      error.code === "ER_ROW_IS_REFERENCED_2" ||
+      error.code === "ER_ROW_IS_REFERENCED"
+    ) {
+      return res.status(400).json({
+        error:
+          "Cannot delete employee: Employee has associated records that prevent deletion. Please run the database migration to update foreign key constraints.",
+        details: error.sqlMessage || error.message,
+      });
+    }
+
+    res.status(500).json({
+      error: "Failed to delete employee",
+      details: error.message,
+    });
   }
 };
 

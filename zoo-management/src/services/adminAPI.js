@@ -48,7 +48,12 @@ export const employeeAPI = {
     const response = await fetch(`${API_BASE_URL}/admin/employees/${id}`, {
       method: "DELETE",
     });
-    if (!response.ok) throw new Error("Failed to delete employee");
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      const error = new Error(errorData.error || "Failed to delete employee");
+      error.response = { data: errorData };
+      throw error;
+    }
     return response.json();
   },
 
