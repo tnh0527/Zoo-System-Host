@@ -72,14 +72,12 @@ import {
   Home,
   Plus,
   PawPrint,
+  X,
 } from "lucide-react";
 import { useData } from "../data/DataContext";
 import { toast } from "sonner";
 import { ZooLogo } from "../components/ZooLogo";
-import {
-  AddExhibitDialog,
-  EditExhibitDialog,
-} from "../components/ExhibitDialogs";
+import { EditExhibitDialog } from "../components/ExhibitDialogs";
 import { usePricing } from "../data/PricingContext";
 import {
   employeeAPI,
@@ -131,13 +129,14 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
   const [viewZoneEmployees, setViewZoneEmployees] = useState(null);
   const [isSalaryManagementOpen, setIsSalaryManagementOpen] = useState(false);
   const [supervisorSearch, setSupervisorSearch] = useState("");
-  const [isAddExhibitOpen, setIsAddExhibitOpen] = useState(false);
-  const [deleteConfirmExhibit, setDeleteConfirmExhibit] = useState(null);
   const [editingExhibit, setEditingExhibit] = useState(null);
   const [isAddAnimalOpen, setIsAddAnimalOpen] = useState(false);
   const [deleteConfirmAnimal, setDeleteConfirmAnimal] = useState(null);
   const [editingAnimal, setEditingAnimal] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(new Date());
+
+  // Loading state for async save/update operations
+  const [isSaving, setIsSaving] = useState(false);
 
   // Salary state for each job type (5 shared login roles)
   const [salaries, setSalaries] = useState({
@@ -407,6 +406,8 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
   );
 
   const handleDeleteEmployee = async (emp) => {
+    if (isSaving) return;
+    setIsSaving(true);
     try {
       await employeeAPI.delete(emp.Employee_ID);
 
@@ -431,10 +432,14 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
 
       toast.error(errorMessage);
       setDeleteConfirmEmployee(null);
+    } finally {
+      setIsSaving(false);
     }
   };
 
   const handleUpdateEmployee = async (employeeId, formData) => {
+    if (isSaving) return;
+    setIsSaving(true);
     try {
       // Find the location object for the selected zone
       const zoneLocation = allLocations.find(
@@ -466,10 +471,14 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
     } catch (error) {
       console.error("Error updating employee:", error);
       toast.error("Failed to update employee");
+    } finally {
+      setIsSaving(false);
     }
   };
 
   const handleAddEmployee = async (formData) => {
+    if (isSaving) return;
+    setIsSaving(true);
     try {
       // Find the location object for the selected zone
       const zoneLocation = allLocations.find(
@@ -501,10 +510,14 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
     } catch (error) {
       console.error("Error adding employee:", error);
       toast.error("Failed to add employee");
+    } finally {
+      setIsSaving(false);
     }
   };
 
   const handleAssignSupervisor = async (zoneId, supervisorId) => {
+    if (isSaving) return;
+    setIsSaving(true);
     try {
       await locationAPI.updateSupervisor(zoneId, supervisorId);
 
@@ -523,10 +536,14 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
     } catch (error) {
       console.error("Error assigning supervisor:", error);
       toast.error("Failed to assign supervisor");
+    } finally {
+      setIsSaving(false);
     }
   };
 
   const handleSalarySave = async () => {
+    if (isSaving) return;
+    setIsSaving(true);
     try {
       // Update actual salary state
       setSalaries({ ...tempSalaries });
@@ -559,6 +576,8 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
     } catch (error) {
       console.error("Error updating salaries:", error);
       toast.error("Failed to update salaries");
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -580,6 +599,8 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
   };
 
   const handlePricingSave = async () => {
+    if (isSaving) return;
+    setIsSaving(true);
     try {
       // Update pricing in database
       await pricingAPI.updatePricing(tempTicketPrices, tempMembershipPrice);
@@ -593,6 +614,8 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
     } catch (error) {
       console.error("Error updating pricing:", error);
       toast.error("Failed to update pricing");
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -600,52 +623,9 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
   // EXHIBIT HANDLERS
   // ============================================
 
-  const handleAddExhibit = async (formData) => {
-    try {
-      const exhibitData = {
-        name: formData.name,
-        description: formData.description,
-        capacity: formData.capacity ? parseInt(formData.capacity) : null,
-        displayTime: formData.displayTime || null,
-        locationId: formData.locationId ? parseInt(formData.locationId) : null,
-      };
-
-      const newExhibit = await exhibitAPI.create(exhibitData);
-
-      // Upload image if provided
-      if (formData.imageFile) {
-        const imageFormData = new FormData();
-        imageFormData.append("image", formData.imageFile);
-
-        const imageResponse = await fetch(
-          `http://localhost:5000/api/admin/exhibits/${newExhibit.Exhibit_ID}/upload-image`,
-          {
-            method: "POST",
-            body: imageFormData,
-          }
-        );
-
-        if (!imageResponse.ok) {
-          const errorData = await imageResponse.json();
-          console.error("Image upload failed:", errorData);
-          toast.error("Exhibit added but image upload failed");
-        }
-      }
-
-      // Reload exhibits to get fresh data including image URL
-      const exhibitsData = await exhibitAPI.getAll();
-      setAllExhibitsDB(exhibitsData);
-
-      setIsAddExhibitOpen(false);
-      toast.success(`Successfully added exhibit: ${formData.name}!`);
-    } catch (error) {
-      console.error("Error adding exhibit:", error);
-      toast.error("Failed to add exhibit");
-    }
-  };
-
   const handleUpdateExhibit = async (formData) => {
-    if (!editingExhibit) return;
+    if (!editingExhibit || isSaving) return;
+    setIsSaving(true);
 
     try {
       // Build update object with only changed fields
@@ -678,6 +658,11 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
         await exhibitAPI.update(editingExhibit.Exhibit_ID, exhibitData);
       }
 
+      // Remove image if requested
+      if (formData.removeImage) {
+        await exhibitAPI.removeImage(editingExhibit.Exhibit_ID);
+      }
+
       // Upload new image if provided
       if (formData.imageFile) {
         const imageFormData = new FormData();
@@ -694,7 +679,16 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
         if (!imageResponse.ok) {
           const errorData = await imageResponse.json();
           console.error("Image upload failed:", errorData);
-          toast.error("Exhibit updated but image upload failed");
+
+          // Reload exhibits even if image failed
+          const exhibitsData = await exhibitAPI.getAll();
+          setAllExhibitsDB(exhibitsData);
+          setEditingExhibit(null);
+
+          toast.error(
+            `Image upload failed: ${errorData.error || "Unknown error"}`
+          );
+          return; // Exit early - don't show success message
         }
       }
 
@@ -707,22 +701,27 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
     } catch (error) {
       console.error("Error updating exhibit:", error);
       toast.error("Failed to update exhibit");
+    } finally {
+      setIsSaving(false);
     }
   };
 
-  const handleDeleteExhibit = async (exhibit) => {
+  const handleRemoveExhibitImage = async (exhibitId) => {
+    if (isSaving) return;
+    setIsSaving(true);
     try {
-      await exhibitAPI.delete(exhibit.Exhibit_ID);
+      await exhibitAPI.removeImage(exhibitId);
 
-      // Reload exhibits
+      // Reload exhibits to get fresh data
       const exhibitsData = await exhibitAPI.getAll();
       setAllExhibitsDB(exhibitsData);
 
-      setDeleteConfirmExhibit(null);
-      toast.success(`Successfully removed exhibit: ${exhibit.exhibit_Name}`);
+      toast.success("Image removed successfully!");
     } catch (error) {
-      console.error("Error deleting exhibit:", error);
-      toast.error("Failed to delete exhibit");
+      console.error("Error removing exhibit image:", error);
+      toast.error("Failed to remove image");
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -731,6 +730,8 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
   // ============================================
 
   const handleAddAnimal = async (formData) => {
+    if (isSaving) return;
+    setIsSaving(true);
     try {
       const animalData = {
         name: formData.name,
@@ -761,7 +762,18 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
         if (!imageResponse.ok) {
           const errorData = await imageResponse.json();
           console.error("Image upload failed:", errorData);
-          toast.error("Animal added but image upload failed");
+
+          // Reload animals even if image failed
+          const animalsData = await animalAPI.getAll();
+          setAllAnimalsDB(animalsData);
+          setIsAddAnimalOpen(false);
+
+          toast.error(
+            `Animal added but image upload failed: ${
+              errorData.error || "Unknown error"
+            }`
+          );
+          return; // Exit early
         }
       }
 
@@ -794,11 +806,15 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
     } catch (error) {
       console.error("Error adding animal:", error);
       toast.error("Failed to add animal");
+    } finally {
+      setIsSaving(false);
     }
   };
 
   const handleUpdateAnimal = async (formData) => {
     if (!editingAnimal) return;
+    if (isSaving) return;
+    setIsSaving(true);
 
     try {
       // Build update object with only changed fields
@@ -836,6 +852,11 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
         await animalAPI.update(editingAnimal.Animal_ID, animalData);
       }
 
+      // Remove image if requested
+      if (formData.removeImage) {
+        await animalAPI.removeImage(editingAnimal.Animal_ID);
+      }
+
       // Upload new image if provided
       if (formData.imageFile) {
         const imageFormData = new FormData();
@@ -852,7 +873,16 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
         if (!imageResponse.ok) {
           const errorData = await imageResponse.json();
           console.error("Image upload failed:", errorData);
-          toast.error("Animal updated but image upload failed");
+
+          // Reload animals even if image failed
+          const animalsData = await animalAPI.getAll();
+          setAllAnimalsDB(animalsData);
+          setEditingAnimal(null);
+
+          toast.error(
+            `Image upload failed: ${errorData.error || "Unknown error"}`
+          );
+          return; // Exit early - don't show success message
         }
       }
 
@@ -867,10 +897,33 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
     } catch (error) {
       console.error("Error updating animal:", error);
       toast.error("Failed to update animal");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleRemoveAnimalImage = async (animalId) => {
+    if (isSaving) return;
+    setIsSaving(true);
+    try {
+      await animalAPI.removeImage(animalId);
+
+      // Reload animals to get fresh data
+      const animalsData = await animalAPI.getAll();
+      setAllAnimalsDB(animalsData);
+
+      toast.success("Image removed successfully!");
+    } catch (error) {
+      console.error("Error removing animal image:", error);
+      toast.error("Failed to remove image");
+    } finally {
+      setIsSaving(false);
     }
   };
 
   const handleDeleteAnimal = async (animal) => {
+    if (isSaving) return;
+    setIsSaving(true);
     try {
       await animalAPI.delete(animal.Animal_ID);
 
@@ -886,6 +939,8 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
     } catch (error) {
       console.error("Error deleting animal:", error);
       toast.error("Failed to delete animal");
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -1293,9 +1348,10 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
                 <Button
                   onClick={handlePricingSave}
                   className="bg-green-600 hover:bg-green-700 cursor-pointer"
+                  disabled={isSaving}
                 >
                   <Save className="h-4 w-4 mr-2" />
-                  Save Changes
+                  {isSaving ? "Saving..." : "Save Changes"}
                 </Button>
               </div>
             </DialogContent>
@@ -1584,9 +1640,10 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
                 <Button
                   onClick={handleSalarySave}
                   className="bg-green-600 hover:bg-green-700 cursor-pointer"
+                  disabled={isSaving}
                 >
                   <Save className="h-4 w-4 mr-2" />
-                  Save Changes
+                  {isSaving ? "Saving..." : "Save Changes"}
                 </Button>
               </div>
             </DialogContent>
@@ -1603,6 +1660,7 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
               onAdd={handleAddEmployee}
               allEmployees={allEmployees}
               salaries={salaries}
+              isSaving={isSaving}
             />
           </div>
           <Card>
@@ -1668,6 +1726,7 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
                           size="sm"
                           onClick={() => setEditingEmployee(emp)}
                           className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 cursor-pointer"
+                          disabled={isSaving}
                         >
                           <Edit className="h-4 w-4" />
                         </Button>
@@ -1676,6 +1735,7 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
                           size="sm"
                           onClick={() => setDeleteConfirmEmployee(emp)}
                           className="text-red-600 hover:text-red-700 hover:bg-red-50 cursor-pointer"
+                          disabled={isSaving}
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
@@ -1692,72 +1752,57 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
         <section id="exhibits">
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-2xl">🏛️ Exhibit Management</h2>
-            <AddExhibitDialog
-              isOpen={isAddExhibitOpen}
-              onOpenChange={setIsAddExhibitOpen}
-              onAdd={handleAddExhibit}
-              locations={allLocations}
-            />
           </div>
           <Card>
             <CardContent className="pt-6">
               <p className="text-sm text-gray-600 mb-4">
                 Manage zoo exhibits and displays
               </p>
-              <ScrollArea className="h-[400px]">
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-                  {allExhibitsDB.map((exhibit) => (
-                    <Card
-                      key={exhibit.Exhibit_ID}
-                      className="p-4 hover:shadow-md transition-shadow"
-                    >
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-2">
-                            <h3 className="font-semibold text-lg">
-                              {exhibit.exhibit_Name}
-                            </h3>
-                            {exhibit.Location_Description && (
-                              <Badge variant="outline" className="text-xs">
-                                {exhibit.Zone}
-                              </Badge>
-                            )}
-                          </div>
-                          <p className="text-sm text-gray-600 mb-2">
-                            {exhibit.exhibit_Description || "No description"}
-                          </p>
-                          <div className="flex flex-wrap gap-2 text-xs text-gray-500">
-                            {exhibit.Capacity && (
-                              <span>Capacity: {exhibit.Capacity}</span>
-                            )}
-                            {exhibit.Display_Time && (
-                              <span>• {exhibit.Display_Time}</span>
-                            )}
-                          </div>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                {allExhibitsDB.map((exhibit) => (
+                  <Card
+                    key={exhibit.Exhibit_ID}
+                    className="p-4 hover:shadow-md transition-shadow"
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-2">
+                          <h3 className="font-semibold text-lg">
+                            {exhibit.exhibit_Name}
+                          </h3>
+                          {exhibit.Location_Description && (
+                            <Badge variant="outline" className="text-xs">
+                              {exhibit.Zone}
+                            </Badge>
+                          )}
                         </div>
-                        <div className="flex gap-1 ml-2">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setEditingExhibit(exhibit)}
-                            className="cursor-pointer"
-                          >
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setDeleteConfirmExhibit(exhibit)}
-                            className="text-red-600 hover:text-red-700 hover:bg-red-50 cursor-pointer"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+                        <p className="text-sm text-gray-600 mb-2">
+                          {exhibit.exhibit_Description || "No description"}
+                        </p>
+                        <div className="flex flex-wrap gap-2 text-xs text-gray-500">
+                          {exhibit.Capacity && (
+                            <span>Capacity: {exhibit.Capacity}</span>
+                          )}
+                          {exhibit.Display_Time && (
+                            <span>• {exhibit.Display_Time}</span>
+                          )}
                         </div>
                       </div>
-                    </Card>
-                  ))}
-                </div>
-              </ScrollArea>
+                      <div className="flex gap-1 ml-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setEditingExhibit(exhibit)}
+                          className="cursor-pointer"
+                          disabled={isSaving}
+                        >
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  </Card>
+                ))}
+              </div>
             </CardContent>
           </Card>
         </section>
@@ -1771,6 +1816,7 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
               onOpenChange={setIsAddAnimalOpen}
               onAdd={handleAddAnimal}
               enclosures={allEnclosures}
+              isSaving={isSaving}
             />
           </div>
           <Card>
@@ -1827,6 +1873,7 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
                           variant="outline"
                           className="bg-blue-50 border-blue-300 text-blue-600 hover:bg-blue-100 cursor-pointer flex-shrink-0"
                           onClick={() => setEditingAnimal(animal)}
+                          disabled={isSaving}
                         >
                           <Edit className="h-4 w-4 mr-2" />
                           Edit
@@ -1888,6 +1935,7 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
                         onClick={() =>
                           handleAssignSupervisor(selectedZone.Location_ID, null)
                         }
+                        disabled={isSaving}
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>
@@ -1922,7 +1970,7 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
                 {filteredEmployeesForSupervisor.map((employee) => (
                   <button
                     key={employee.Employee_ID}
-                    className="w-full p-4 border rounded-lg text-left hover:bg-purple-50 transition-colors cursor-pointer"
+                    className="w-full p-4 border rounded-lg text-left hover:bg-purple-50 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                     onClick={() =>
                       selectedZone &&
                       handleAssignSupervisor(
@@ -1930,6 +1978,7 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
                         employee.Employee_ID
                       )
                     }
+                    disabled={isSaving}
                   >
                     <div className="flex items-center justify-between gap-4">
                       <p className="font-medium flex-shrink-0">
@@ -1973,7 +2022,7 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel className="cursor-pointer">
+              <AlertDialogCancel className="cursor-pointer" disabled={isSaving}>
                 Cancel
               </AlertDialogCancel>
               <AlertDialogAction
@@ -1982,9 +2031,10 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
                   handleDeleteEmployee(deleteConfirmEmployee)
                 }
                 className="bg-red-600 hover:bg-red-700 cursor-pointer"
+                disabled={isSaving}
               >
                 <Trash2 className="h-4 w-4 mr-2" />
-                Delete Employee
+                {isSaving ? "Deleting..." : "Delete Employee"}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
@@ -1998,6 +2048,7 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
           onUpdate={handleUpdateEmployee}
           allLocations={allLocations}
           salaries={salaries}
+          isSaving={isSaving}
         />
 
         {/* Edit Exhibit Dialog */}
@@ -2006,11 +2057,9 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
           isOpen={editingExhibit !== null}
           onOpenChange={(open) => !open && setEditingExhibit(null)}
           onUpdate={handleUpdateExhibit}
-          onDelete={(exhibit) => {
-            setEditingExhibit(null);
-            setDeleteConfirmExhibit(exhibit);
-          }}
+          onRemoveImage={handleRemoveExhibitImage}
           locations={allLocations}
+          isSaving={isSaving}
         />
 
         {/* Edit Animal Dialog */}
@@ -2023,7 +2072,9 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
             setEditingAnimal(null);
             setDeleteConfirmAnimal(animal);
           }}
+          onRemoveImage={handleRemoveAnimalImage}
           enclosures={allEnclosures}
+          isSaving={isSaving}
         />
 
         {/* Delete Animal Confirmation Dialog */}
@@ -2042,7 +2093,7 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel className="cursor-pointer">
+              <AlertDialogCancel className="cursor-pointer" disabled={isSaving}>
                 Cancel
               </AlertDialogCancel>
               <AlertDialogAction
@@ -2050,9 +2101,10 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
                   deleteConfirmAnimal && handleDeleteAnimal(deleteConfirmAnimal)
                 }
                 className="bg-red-600 hover:bg-red-700 cursor-pointer"
+                disabled={isSaving}
               >
                 <PawPrint className="h-4 w-4 mr-2" />
-                Delete Animal
+                {isSaving ? "Deleting..." : "Delete Animal"}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
@@ -2069,6 +2121,7 @@ function AddEmployeeDialog({
   onAdd,
   allEmployees,
   salaries,
+  isSaving,
 }) {
   const [formData, setFormData] = useState({
     firstName: "",
@@ -2308,8 +2361,9 @@ function AddEmployeeDialog({
             <Button
               type="submit"
               className="w-full bg-green-600 hover:bg-green-700 cursor-pointer"
+              disabled={isSaving}
             >
-              Add Employee
+              {isSaving ? "Adding..." : "Add Employee"}
             </Button>
           </form>
         </ScrollArea>
@@ -2326,6 +2380,7 @@ function EditEmployeeDialog({
   onUpdate,
   allLocations,
   salaries,
+  isSaving,
 }) {
   // Helper function to format date for input[type="date"]
   const formatDateForInput = (dateString) => {
@@ -2594,11 +2649,11 @@ function EditEmployeeDialog({
             </div>
             <Button
               type="submit"
-              disabled={!hasChanges}
+              disabled={!hasChanges || isSaving}
               className="w-full bg-blue-600 hover:bg-blue-700 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Save className="h-4 w-4 mr-2" />
-              Save Changes
+              {isSaving ? "Saving..." : "Save Changes"}
             </Button>
           </form>
         </ScrollArea>
@@ -2608,7 +2663,13 @@ function EditEmployeeDialog({
 }
 
 // Add Animal Dialog Component
-function AddAnimalDialog({ isOpen, onOpenChange, onAdd, enclosures }) {
+function AddAnimalDialog({
+  isOpen,
+  onOpenChange,
+  onAdd,
+  enclosures,
+  isSaving,
+}) {
   const [formData, setFormData] = useState({
     name: "",
     species: "",
@@ -2774,20 +2835,37 @@ function AddAnimalDialog({ isOpen, onOpenChange, onAdd, enclosures }) {
               provided, a default species image will be used.
             </p>
             {imagePreview && (
-              <div className="mt-2">
+              <div className="relative inline-block mt-2">
                 <img
                   src={imagePreview}
                   alt="Preview"
                   className="w-32 h-32 object-cover rounded border"
                 />
+                <Button
+                  type="button"
+                  variant="destructive"
+                  size="sm"
+                  className="absolute -top-2 -right-2 h-6 w-6 rounded-full p-0"
+                  onClick={() => {
+                    setImagePreview(null);
+                    setFormData({ ...formData, imageFile: null });
+                    // Clear the file input
+                    const fileInput = document.getElementById("animalImage");
+                    if (fileInput) fileInput.value = "";
+                  }}
+                  title="Remove image"
+                >
+                  <X className="h-3 w-3" />
+                </Button>
               </div>
             )}
           </div>
           <Button
             type="submit"
             className="w-full bg-teal-600 hover:bg-teal-700 cursor-pointer"
+            disabled={isSaving}
           >
-            Add Animal
+            {isSaving ? "Adding..." : "Add Animal"}
           </Button>
         </form>
       </DialogContent>
@@ -2802,7 +2880,9 @@ function EditAnimalDialog({
   onOpenChange,
   onUpdate,
   onDelete,
+  onRemoveImage,
   enclosures,
+  isSaving,
 }) {
   // Helper function to format date for input[type="date"]
   const formatDateForInput = (dateString) => {
@@ -2822,6 +2902,7 @@ function EditAnimalDialog({
     birthday: formatDateForInput(animal?.Birthday) || "",
     enclosureId: animal?.Enclosure_ID?.toString() || "1",
     imageFile: null,
+    removeImage: false, // Track if image should be removed
   });
   const [imagePreview, setImagePreview] = useState(animal?.Image_URL || null);
   const [originalData, setOriginalData] = useState(null);
@@ -2838,7 +2919,8 @@ function EditAnimalDialog({
       formData.birthday !== originalData.birthday ||
       formData.enclosureId !== originalData.enclosureId;
 
-    const imageChanged = formData.imageFile !== null;
+    const imageChanged =
+      formData.imageFile !== null || formData.removeImage === true;
 
     return textFieldsChanged || imageChanged;
   }, [formData, originalData]);
@@ -2854,6 +2936,7 @@ function EditAnimalDialog({
         birthday: formatDateForInput(animal.Birthday),
         enclosureId: animal.Enclosure_ID.toString(),
         imageFile: null,
+        removeImage: false,
       };
       setFormData(initialData);
       setOriginalData(initialData);
@@ -2864,7 +2947,7 @@ function EditAnimalDialog({
   const handleImageChange = (e) => {
     const file = e.target.files?.[0];
     if (file) {
-      setFormData({ ...formData, imageFile: file });
+      setFormData({ ...formData, imageFile: file, removeImage: false });
       // Create preview
       const reader = new FileReader();
       reader.onloadend = () => {
@@ -2872,6 +2955,11 @@ function EditAnimalDialog({
       };
       reader.readAsDataURL(file);
     }
+  };
+
+  const handleRemoveCurrentImage = () => {
+    setFormData({ ...formData, removeImage: true, imageFile: null });
+    setImagePreview(null);
   };
 
   const handleSubmit = (e) => {
@@ -2988,8 +3076,50 @@ function EditAnimalDialog({
               </Select>
             </div>
           </div>
+          {animal?.Image_URL && !imagePreview && !formData.removeImage && (
+            <div>
+              <Label>Current Image</Label>
+              <div className="relative inline-block mt-2">
+                <img
+                  src={animal.Image_URL}
+                  alt={animal.Animal_Name}
+                  className="h-32 w-32 object-cover rounded border"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="absolute -top-2 -right-2 h-7 w-7 rounded-full p-0 bg-white hover:bg-red-50 border-2 border-red-500 text-red-600 hover:text-red-700 shadow-md"
+                  onClick={handleRemoveCurrentImage}
+                  title="Remove image"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          )}
+          {formData.removeImage && (
+            <div className="p-3 bg-orange-50 border border-orange-200 rounded-md">
+              <p className="text-sm text-orange-800">
+                ⚠️ Image will be removed when you save changes.{" "}
+                <button
+                  type="button"
+                  onClick={() =>
+                    setFormData({ ...formData, removeImage: false })
+                  }
+                  className="underline hover:no-underline font-medium"
+                >
+                  Undo
+                </button>
+              </p>
+            </div>
+          )}
           <div>
-            <Label htmlFor="editAnimalImage">Animal Photo (Optional)</Label>
+            <Label htmlFor="editAnimalImage">
+              {animal?.Image_URL && !formData.removeImage
+                ? "Change Image"
+                : "Add Animal Photo"}
+            </Label>
             <Input
               id="editAnimalImage"
               type="file"
@@ -2998,32 +3128,52 @@ function EditAnimalDialog({
             />
             <p className="text-sm text-gray-500 mt-1">
               Upload a new photo for this animal (JPG, PNG, WebP - max 5MB).
-              Leave empty to keep current image.
+              {animal?.Image_URL && !formData.removeImage
+                ? " Leave empty to keep current image."
+                : ""}
             </p>
             {imagePreview && (
-              <div className="mt-2">
+              <div className="relative inline-block mt-2">
                 <img
                   src={imagePreview}
-                  alt="Current/Preview"
+                  alt="Preview"
                   className="w-32 h-32 object-cover rounded border"
                 />
+                <Button
+                  type="button"
+                  variant="destructive"
+                  size="sm"
+                  className="absolute -top-2 -right-2 h-6 w-6 rounded-full p-0"
+                  onClick={() => {
+                    setImagePreview(null);
+                    setFormData({ ...formData, imageFile: null });
+                    // Clear the file input
+                    const fileInput =
+                      document.getElementById("editAnimalImage");
+                    if (fileInput) fileInput.value = "";
+                  }}
+                  title="Remove image"
+                >
+                  <X className="h-3 w-3" />
+                </Button>
               </div>
             )}
           </div>
           <div className="flex gap-3">
             <Button
               type="submit"
-              disabled={!hasChanges}
+              disabled={!hasChanges || isSaving}
               className="flex-1 bg-teal-600 hover:bg-teal-700 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Save className="h-4 w-4 mr-2" />
-              Save Changes
+              {isSaving ? "Saving..." : "Save Changes"}
             </Button>
             <Button
               type="button"
               variant="outline"
               className="bg-red-50 border-red-300 text-red-600 hover:bg-red-100 cursor-pointer"
               onClick={() => onDelete(animal)}
+              disabled={isSaving}
             >
               <Trash2 className="h-4 w-4 mr-2" />
               Delete Animal

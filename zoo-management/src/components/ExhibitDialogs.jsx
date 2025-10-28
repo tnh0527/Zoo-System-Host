@@ -8,7 +8,6 @@ import {
   DialogHeader,
   DialogTitle,
   DialogDescription,
-  DialogTrigger,
 } from "./ui/dialog";
 import {
   Select,
@@ -17,163 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "./ui/select";
-import { Plus, Save, Trash2 } from "lucide-react";
-
-// Add Exhibit Dialog Component
-export function AddExhibitDialog({ isOpen, onOpenChange, onAdd, locations }) {
-  const [formData, setFormData] = useState({
-    name: "",
-    description: "",
-    capacity: "",
-    displayTime: "",
-    locationId: "",
-    imageFile: null,
-  });
-  const [imagePreview, setImagePreview] = useState(null);
-
-  const handleImageChange = (e) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setFormData({ ...formData, imageFile: file });
-      // Create preview
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setImagePreview(reader.result);
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    onAdd(formData);
-    setFormData({
-      name: "",
-      description: "",
-      capacity: "",
-      displayTime: "",
-      locationId: "",
-      imageFile: null,
-    });
-    setImagePreview(null);
-  };
-
-  return (
-    <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogTrigger asChild>
-        <Button className="bg-teal-600 hover:bg-teal-700 cursor-pointer">
-          <Plus className="h-4 w-4 mr-2" />
-          Add Exhibit
-        </Button>
-      </DialogTrigger>
-      <DialogContent className="max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>Add New Exhibit</DialogTitle>
-          <DialogDescription>
-            Add a new exhibit to the WildWood Zoo collection.
-          </DialogDescription>
-        </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <Label htmlFor="exhibitName">Exhibit Name *</Label>
-            <Input
-              id="exhibitName"
-              placeholder="e.g., Tropical Rainforest"
-              value={formData.name}
-              onChange={(e) =>
-                setFormData({ ...formData, name: e.target.value })
-              }
-              required
-            />
-          </div>
-          <div>
-            <Label htmlFor="exhibitDescription">Description</Label>
-            <textarea
-              id="exhibitDescription"
-              placeholder="Enter exhibit description..."
-              value={formData.description}
-              onChange={(e) =>
-                setFormData({ ...formData, description: e.target.value })
-              }
-              className="w-full h-24 px-3 py-2 border rounded-md"
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="capacity">Capacity</Label>
-              <Input
-                id="capacity"
-                type="number"
-                placeholder="e.g., 50"
-                value={formData.capacity}
-                onChange={(e) =>
-                  setFormData({ ...formData, capacity: e.target.value })
-                }
-              />
-            </div>
-            <div>
-              <Label htmlFor="displayTime">Display Time</Label>
-              <Input
-                id="displayTime"
-                placeholder="e.g., 9:00 AM - 5:00 PM"
-                value={formData.displayTime}
-                onChange={(e) =>
-                  setFormData({ ...formData, displayTime: e.target.value })
-                }
-              />
-            </div>
-          </div>
-          <div>
-            <Label htmlFor="locationId">Location (Zone)</Label>
-            <Select
-              value={formData.locationId}
-              onValueChange={(value) =>
-                setFormData({ ...formData, locationId: value })
-              }
-            >
-              <SelectTrigger className="cursor-pointer">
-                <SelectValue placeholder="Select location" />
-              </SelectTrigger>
-              <SelectContent>
-                {locations.map((loc) => (
-                  <SelectItem
-                    key={loc.Location_ID}
-                    value={loc.Location_ID.toString()}
-                  >
-                    {loc.Zone} - {loc.Location_Description}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div>
-            <Label htmlFor="exhibitImage">Exhibit Image</Label>
-            <Input
-              id="exhibitImage"
-              type="file"
-              accept="image/*"
-              onChange={handleImageChange}
-              className="cursor-pointer"
-            />
-            {imagePreview && (
-              <img
-                src={imagePreview}
-                alt="Preview"
-                className="mt-2 h-32 w-32 object-cover rounded"
-              />
-            )}
-          </div>
-          <Button
-            type="submit"
-            className="w-full bg-teal-600 hover:bg-teal-700 cursor-pointer"
-          >
-            Add Exhibit
-          </Button>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
-}
+import { Save } from "lucide-react";
 
 // Edit Exhibit Dialog Component
 export function EditExhibitDialog({
@@ -181,8 +24,8 @@ export function EditExhibitDialog({
   isOpen,
   onOpenChange,
   onUpdate,
-  onDelete,
   locations,
+  isSaving,
 }) {
   const [formData, setFormData] = useState({
     name: exhibit?.exhibit_Name || "",
@@ -349,25 +192,14 @@ export function EditExhibitDialog({
               />
             )}
           </div>
-          <div className="flex gap-2">
-            <Button
-              type="submit"
-              disabled={!hasChanges}
-              className="flex-1 bg-teal-600 hover:bg-teal-700 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <Save className="h-4 w-4 mr-2" />
-              Save Changes
-            </Button>
-            <Button
-              type="button"
-              variant="destructive"
-              className="cursor-pointer"
-              onClick={() => onDelete(exhibit)}
-            >
-              <Trash2 className="h-4 w-4 mr-2" />
-              Delete Exhibit
-            </Button>
-          </div>
+          <Button
+            type="submit"
+            disabled={!hasChanges || isSaving}
+            className="w-full bg-teal-600 hover:bg-teal-700 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Save className="h-4 w-4 mr-2" />
+            {isSaving ? "Saving..." : "Save Changes"}
+          </Button>
         </form>
       </DialogContent>
     </Dialog>

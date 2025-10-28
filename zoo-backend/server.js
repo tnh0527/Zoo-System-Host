@@ -9,6 +9,7 @@ import { testConnection } from "./config/database.js";
 import adminRoutes from "./routes/adminRoutes.js";
 import customerRoutes from "./routes/customerRoutes.js";
 import authRoutes from "./routes/authRoutes.js";
+import { isAzureConfigured } from "./middleware/azureUpload.js";
 
 dotenv.config();
 
@@ -48,8 +49,8 @@ app.use(morgan("dev"));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Serve uploaded images as static files
-app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+// Note: Image uploads are stored in Azure Blob Storage, not locally
+// Images are served directly from Azure CDN URLs stored in the database
 
 // Health check
 app.get("/health", (req, res) => {
@@ -87,13 +88,27 @@ const startServer = async () => {
     const dbConnected = await testConnection();
 
     if (!dbConnected) {
-      console.error("Server starting without database connection");
+      console.error("⚠️  Server starting without database connection");
+    }
+
+    // Check Azure configuration
+    if (isAzureConfigured()) {
+      console.log("✅ Azure Blob Storage is configured");
+    } else {
+      console.error(
+        "⚠️  Azure Blob Storage is NOT configured - image uploads will fail"
+      );
     }
 
     app.listen(PORT, () => {
-      console.log(`Server is running on port ${PORT}`);
+      console.log(`\n🚀 Server is running on port ${PORT}`);
       console.log(`Environment: ${process.env.NODE_ENV || "development"}`);
       console.log(`Health check: http://localhost:${PORT}/health`);
+      console.log(
+        `Images: Stored in Azure Blob Storage (${
+          process.env.AZURE_STORAGE_CONTAINER_NAME || "not configured"
+        })\n`
+      );
     });
   } catch (error) {
     console.error("Failed to start server:", error);

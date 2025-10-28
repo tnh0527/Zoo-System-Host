@@ -1,5 +1,10 @@
 import express from "express";
-import { upload } from "../middleware/upload.js";
+import {
+  upload as azureUpload,
+  uploadToAzure,
+  deleteFromAzure,
+  isAzureConfigured,
+} from "../middleware/azureUpload.js";
 import {
   getAllEmployees,
   getEmployeeById,
@@ -11,9 +16,7 @@ import {
   updateLocationSupervisor,
   getAllExhibits,
   getExhibitById,
-  addExhibit,
   updateExhibit,
-  deleteExhibit,
   getAllAnimals,
   getAnimalById,
   addAnimal,
@@ -49,9 +52,7 @@ router.patch("/locations/:id/supervisor", updateLocationSupervisor);
 // Exhibit routes
 router.get("/exhibits", getAllExhibits);
 router.get("/exhibits/:id", getExhibitById);
-router.post("/exhibits", addExhibit);
 router.put("/exhibits/:id", updateExhibit);
-router.delete("/exhibits/:id", deleteExhibit);
 
 // Animal routes
 router.get("/animals", getAllAnimals);
@@ -60,10 +61,83 @@ router.post("/animals", addAnimal);
 router.put("/animals/:id", updateAnimal);
 router.delete("/animals/:id", deleteAnimal);
 
-// Exhibit image upload route
+// Image deletion routes
+router.delete("/exhibits/:id/remove-image", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Import db connection and Azure delete function
+    const db = (await import("../config/database.js")).default;
+    const { deleteFromAzure } = await import("../middleware/azureUpload.js");
+
+    // Get current image URL
+    const [currentExhibit] = await db.query(
+      "SELECT Image_URL FROM Exhibit WHERE Exhibit_ID = ?",
+      [id]
+    );
+
+    if (!currentExhibit[0]?.Image_URL) {
+      return res.status(404).json({ error: "No image found for this exhibit" });
+    }
+
+    // Delete image from Azure (pass full URL, deleteFromAzure will extract blob name)
+    await deleteFromAzure(currentExhibit[0].Image_URL);
+
+    // Remove image URL from database
+    await db.query("UPDATE Exhibit SET Image_URL = NULL WHERE Exhibit_ID = ?", [
+      id,
+    ]);
+
+    res.json({
+      success: true,
+      message: "Image removed successfully",
+    });
+  } catch (error) {
+    console.error("Error removing exhibit image:", error);
+    res.status(500).json({ error: "Failed to remove image" });
+  }
+});
+
+router.delete("/animals/:id/remove-image", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Import db connection and Azure delete function
+    const db = (await import("../config/database.js")).default;
+    const { deleteFromAzure } = await import("../middleware/azureUpload.js");
+
+    // Get current image URL
+    const [currentAnimal] = await db.query(
+      "SELECT Image_URL FROM Animal WHERE Animal_ID = ?",
+      [id]
+    );
+
+    if (!currentAnimal[0]?.Image_URL) {
+      return res.status(404).json({ error: "No image found for this animal" });
+    }
+
+    // Delete image from Azure (pass full URL, deleteFromAzure will extract blob name)
+    await deleteFromAzure(currentAnimal[0].Image_URL);
+
+    // Remove image URL from database
+    await db.query("UPDATE Animal SET Image_URL = NULL WHERE Animal_ID = ?", [
+      id,
+    ]);
+
+    res.json({
+      success: true,
+      message: "Image removed successfully",
+    });
+  } catch (error) {
+    console.error("Error removing animal image:", error);
+    res.status(500).json({ error: "Failed to remove image" });
+  }
+});
+
+// Exhibit image upload route with Azure Blob Storage
 router.post(
   "/exhibits/:id/upload-image",
-  upload.single("image"),
+  azureUpload.single("image"),
   async (req, res) => {
     try {
       const { id } = req.params;
@@ -72,9 +146,9 @@ router.post(
         return res.status(400).json({ error: "No image file provided" });
       }
 
-      // Import db connection and deleteImageFile
+      // Import db connection and Azure delete function
       const db = (await import("../config/database.js")).default;
-      const { deleteImageFile } = await import("../middleware/upload.js");
+      const { deleteFromAzure } = await import("../middleware/azureUpload.js");
 
       // Get current image URL to delete old file
       const [currentExhibit] = await db.query(
@@ -82,23 +156,13 @@ router.post(
         [id]
       );
 
-      // Delete old image file if exists
+      // Delete old image from Azure if exists
       if (currentExhibit[0]?.Image_URL) {
-        try {
-          // Extract filename from URL
-          const oldUrl = currentExhibit[0].Image_URL;
-          const filename = oldUrl.split("/").pop();
-          deleteImageFile("exhibits", filename);
-        } catch (err) {
-          console.error("Error deleting old image:", err);
-          // Continue even if delete fails
-        }
+        await deleteFromAzure(currentExhibit[0].Image_URL);
       }
 
-      // Construct the new image URL
-      const imageUrl = `${req.protocol}://${req.get("host")}/uploads/exhibits/${
-        req.file.filename
-      }`;
+      // req.file.url is set by azureUpload middleware
+      const imageUrl = req.file.url;
 
       // Update exhibit with new image URL
       await db.query("UPDATE Exhibit SET Image_URL = ? WHERE Exhibit_ID = ?", [
@@ -109,7 +173,7 @@ router.post(
       res.json({
         success: true,
         imageUrl: imageUrl,
-        filename: req.file.filename,
+        filename: req.file.originalname,
       });
     } catch (error) {
       console.error("Error uploading exhibit image:", error);
@@ -118,10 +182,10 @@ router.post(
   }
 );
 
-// Animal image upload route
+// Animal image upload route with Azure Blob Storage
 router.post(
   "/animals/:id/upload-image",
-  upload.single("image"),
+  azureUpload.single("image"),
   async (req, res) => {
     try {
       const { id } = req.params;
@@ -130,9 +194,9 @@ router.post(
         return res.status(400).json({ error: "No image file provided" });
       }
 
-      // Import db connection and deleteImageFile
+      // Import db connection and Azure delete function
       const db = (await import("../config/database.js")).default;
-      const { deleteImageFile } = await import("../middleware/upload.js");
+      const { deleteFromAzure } = await import("../middleware/azureUpload.js");
 
       // Get current image URL to delete old file
       const [currentAnimal] = await db.query(
@@ -140,23 +204,13 @@ router.post(
         [id]
       );
 
-      // Delete old image file if exists
+      // Delete old image from Azure if exists
       if (currentAnimal[0]?.Image_URL) {
-        try {
-          // Extract filename from URL
-          const oldUrl = currentAnimal[0].Image_URL;
-          const filename = oldUrl.split("/").pop();
-          deleteImageFile("animals", filename);
-        } catch (err) {
-          console.error("Error deleting old image:", err);
-          // Continue even if delete fails
-        }
+        await deleteFromAzure(currentAnimal[0].Image_URL);
       }
 
-      // Construct the new image URL
-      const imageUrl = `${req.protocol}://${req.get("host")}/uploads/animals/${
-        req.file.filename
-      }`;
+      // req.file.url is set by azureUpload middleware
+      const imageUrl = req.file.url;
 
       // Update animal with new image URL
       await db.query("UPDATE Animal SET Image_URL = ? WHERE Animal_ID = ?", [
@@ -167,7 +221,7 @@ router.post(
       res.json({
         success: true,
         imageUrl: imageUrl,
-        filename: req.file.filename,
+        filename: req.file.originalname,
       });
     } catch (error) {
       console.error("Error uploading image:", error);

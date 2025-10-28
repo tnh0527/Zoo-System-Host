@@ -164,6 +164,18 @@ export const exhibitAPI = {
     if (!response.ok) throw new Error("Failed to upload exhibit image");
     return response.json();
   },
+
+  // Remove exhibit image
+  removeImage: async (id) => {
+    const response = await fetch(
+      `${API_BASE_URL}/admin/exhibits/${id}/remove-image`,
+      {
+        method: "DELETE",
+      }
+    );
+    if (!response.ok) throw new Error("Failed to remove exhibit image");
+    return response.json();
+  },
 };
 
 // ============================================
@@ -213,6 +225,34 @@ export const animalAPI = {
       method: "DELETE",
     });
     if (!response.ok) throw new Error("Failed to delete animal");
+    return response.json();
+  },
+
+  // Upload animal image
+  uploadImage: async (id, imageFile) => {
+    const formData = new FormData();
+    formData.append("image", imageFile);
+
+    const response = await fetch(
+      `${API_BASE_URL}/admin/animals/${id}/upload-image`,
+      {
+        method: "POST",
+        body: formData,
+      }
+    );
+    if (!response.ok) throw new Error("Failed to upload animal image");
+    return response.json();
+  },
+
+  // Remove animal image
+  removeImage: async (id) => {
+    const response = await fetch(
+      `${API_BASE_URL}/admin/animals/${id}/remove-image`,
+      {
+        method: "DELETE",
+      }
+    );
+    if (!response.ok) throw new Error("Failed to remove animal image");
     return response.json();
   },
 };
