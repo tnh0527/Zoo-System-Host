@@ -126,6 +126,7 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
   const [isManageZoneOpen, setIsManageZoneOpen] = useState(false);
   const [selectedZone, setSelectedZone] = useState(null);
   const [deleteConfirmEmployee, setDeleteConfirmEmployee] = useState(null);
+  const [editingEmployee, setEditingEmployee] = useState(null);
   const [revenueRange, setRevenueRange] = useState("all");
   const [viewZoneEmployees, setViewZoneEmployees] = useState(null);
   const [isSalaryManagementOpen, setIsSalaryManagementOpen] = useState(false);
@@ -296,6 +297,19 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
     return `${displayHours}:${minutes} ${ampm}`;
   };
 
+  // Helper function to check if employee is a supervisor
+  const isSupervisor = (emp) => {
+    return allLocations.some((loc) => loc.Supervisor_ID === emp.Employee_ID);
+  };
+
+  // Helper function to get employee's display title (with Supervisor override)
+  const getEmployeeTitle = (emp) => {
+    if (isSupervisor(emp)) {
+      return "Supervisor";
+    }
+    return emp.Title || "Unknown";
+  };
+
   // Helper function to get employee zone
   const getEmployeeZone = (emp) => {
     // If employee has a direct zone assignment, show it
@@ -305,7 +319,7 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
     const supervisedZone = allLocations.find(
       (loc) => loc.Supervisor_ID === emp.Employee_ID
     );
-    if (supervisedZone) return `Zone ${supervisedZone.Zone} (Supervisor)`;
+    if (supervisedZone) return `Zone ${supervisedZone.Zone}`;
 
     // Otherwise, find zone by supervisor chain
     const supervisor = allEmployees.find(
@@ -408,7 +422,50 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
       toast.success(`Successfully removed ${emp.First_Name} ${emp.Last_Name}`);
     } catch (error) {
       console.error("Error deleting employee:", error);
-      toast.error("Failed to delete employee");
+
+      // Show specific error message if available
+      const errorMessage =
+        error.response?.data?.error ||
+        error.message ||
+        "Failed to delete employee";
+
+      toast.error(errorMessage);
+      setDeleteConfirmEmployee(null);
+    }
+  };
+
+  const handleUpdateEmployee = async (employeeId, formData) => {
+    try {
+      // Find the location object for the selected zone
+      const zoneLocation = allLocations.find(
+        (loc) => loc.Zone === formData.zone
+      );
+
+      const employeeData = {
+        firstName: formData.firstName,
+        lastName: formData.lastName,
+        birthdate: formData.birthdate,
+        sex: formData.sex,
+        jobId: parseInt(formData.jobId),
+        salary: salaries[parseInt(formData.jobId)],
+        email: formData.email,
+        address: formData.address,
+        supervisorId: zoneLocation ? zoneLocation.Supervisor_ID : null,
+      };
+
+      await employeeAPI.update(employeeId, employeeData);
+
+      // Reload employees
+      const employeesData = await employeeAPI.getAll();
+      setAllEmployees(employeesData);
+
+      setEditingEmployee(null);
+      toast.success(
+        `Successfully updated ${formData.firstName} ${formData.lastName}`
+      );
+    } catch (error) {
+      console.error("Error updating employee:", error);
+      toast.error("Failed to update employee");
     }
   };
 
@@ -1565,8 +1622,14 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
                           <p className="font-medium text-lg">
                             {emp.Last_Name}, {emp.First_Name}
                           </p>
-                          <Badge className="bg-green-100 text-green-800">
-                            {emp.Job_Title?.Title}
+                          <Badge
+                            className={
+                              isSupervisor(emp)
+                                ? "bg-purple-100 text-purple-800"
+                                : "bg-green-100 text-green-800"
+                            }
+                          >
+                            {getEmployeeTitle(emp)}
                           </Badge>
                         </div>
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 text-sm text-gray-600">
@@ -1599,14 +1662,24 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
                           </div>
                         </div>
                       </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setDeleteConfirmEmployee(emp)}
-                        className="text-red-600 hover:text-red-700 hover:bg-red-50 ml-4 cursor-pointer"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                      <div className="flex items-center gap-2 ml-4">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setEditingEmployee(emp)}
+                          className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 cursor-pointer"
+                        >
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setDeleteConfirmEmployee(emp)}
+                          className="text-red-600 hover:text-red-700 hover:bg-red-50 cursor-pointer"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -1916,6 +1989,16 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+
+        {/* Edit Employee Dialog */}
+        <EditEmployeeDialog
+          employee={editingEmployee}
+          isOpen={editingEmployee !== null}
+          onOpenChange={(open) => !open && setEditingEmployee(null)}
+          onUpdate={handleUpdateEmployee}
+          allLocations={allLocations}
+          salaries={salaries}
+        />
 
         {/* Edit Exhibit Dialog */}
         <EditExhibitDialog
@@ -2227,6 +2310,295 @@ function AddEmployeeDialog({
               className="w-full bg-green-600 hover:bg-green-700 cursor-pointer"
             >
               Add Employee
+            </Button>
+          </form>
+        </ScrollArea>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// Edit Employee Dialog Component
+function EditEmployeeDialog({
+  employee,
+  isOpen,
+  onOpenChange,
+  onUpdate,
+  allLocations,
+  salaries,
+}) {
+  // Helper function to format date for input[type="date"]
+  const formatDateForInput = (dateString) => {
+    if (!dateString) return "";
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return "";
+    return date.toISOString().split("T")[0];
+  };
+
+  const [formData, setFormData] = useState({
+    firstName: "",
+    lastName: "",
+    birthdate: "",
+    sex: "M",
+    jobId: "3",
+    email: "",
+    address: "",
+    zone: "A",
+  });
+  const [birthdateError, setBirthdateError] = useState("");
+  const [originalData, setOriginalData] = useState(null);
+
+  // Check if any field has changed
+  const hasChanges = useMemo(() => {
+    if (!originalData) return false;
+
+    return (
+      formData.firstName !== originalData.firstName ||
+      formData.lastName !== originalData.lastName ||
+      formData.birthdate !== originalData.birthdate ||
+      formData.sex !== originalData.sex ||
+      formData.jobId !== originalData.jobId ||
+      formData.email !== originalData.email ||
+      formData.address !== originalData.address ||
+      formData.zone !== originalData.zone
+    );
+  }, [formData, originalData]);
+
+  // Update form data when employee changes
+  useEffect(() => {
+    if (employee) {
+      // Find the zone for this employee based on their supervisor
+      const employeeZone =
+        allLocations.find((loc) => loc.Supervisor_ID === employee.Supervisor_ID)
+          ?.Zone || "A";
+
+      const initialData = {
+        firstName: employee.First_Name,
+        lastName: employee.Last_Name,
+        birthdate: formatDateForInput(employee.Birthdate),
+        sex: employee.Sex,
+        jobId: employee.Job_ID.toString(),
+        email: employee.Email,
+        address: employee.Address,
+        zone: employeeZone,
+      };
+      setFormData(initialData);
+      setOriginalData(initialData);
+      setBirthdateError("");
+    }
+  }, [employee, allLocations]);
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (birthdateError) return;
+    onUpdate(employee.Employee_ID, formData);
+  };
+
+  if (!employee) return null;
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-2xl max-h-[90vh]">
+        <DialogHeader>
+          <DialogTitle>Edit Employee</DialogTitle>
+          <DialogDescription>
+            Update information for {employee.First_Name} {employee.Last_Name}.
+            Salary will be updated based on job type.
+          </DialogDescription>
+        </DialogHeader>
+        <ScrollArea className="max-h-[70vh] pr-4">
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="editFirstName">First Name *</Label>
+                <Input
+                  id="editFirstName"
+                  value={formData.firstName}
+                  onChange={(e) =>
+                    setFormData({ ...formData, firstName: e.target.value })
+                  }
+                  required
+                />
+              </div>
+              <div>
+                <Label htmlFor="editLastName">Last Name *</Label>
+                <Input
+                  id="editLastName"
+                  value={formData.lastName}
+                  onChange={(e) =>
+                    setFormData({ ...formData, lastName: e.target.value })
+                  }
+                  required
+                />
+              </div>
+            </div>
+            <div>
+              <Label htmlFor="editEmail">Email *</Label>
+              <Input
+                id="editEmail"
+                type="email"
+                value={formData.email}
+                onChange={(e) =>
+                  setFormData({ ...formData, email: e.target.value })
+                }
+                required
+              />
+            </div>
+            <div>
+              <Label htmlFor="editJobId">Job Title *</Label>
+              <Select
+                value={formData.jobId}
+                onValueChange={(value) =>
+                  setFormData({ ...formData, jobId: value })
+                }
+              >
+                <SelectTrigger className="cursor-pointer">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {jobTitles
+                    .filter((j) => j.Job_ID !== 1 && j.Job_ID !== 2)
+                    .map((job) => (
+                      <SelectItem
+                        key={job.Job_ID}
+                        value={job.Job_ID.toString()}
+                      >
+                        {job.Title}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="editBirthdate">Birthdate *</Label>
+                <Input
+                  id="editBirthdate"
+                  type="date"
+                  value={formData.birthdate}
+                  onChange={(e) => {
+                    const dateValue = e.target.value;
+                    setBirthdateError("");
+
+                    setFormData({ ...formData, birthdate: dateValue });
+
+                    if (!dateValue) return;
+
+                    const [year, month, day] = dateValue.split("-");
+
+                    if (
+                      year &&
+                      year.length === 4 &&
+                      month &&
+                      month.length === 2 &&
+                      day &&
+                      day.length === 2
+                    ) {
+                      const selectedDate = new Date(dateValue);
+                      if (isNaN(selectedDate.getTime())) return;
+
+                      const today = new Date();
+                      const minDate = new Date();
+                      const maxDate = new Date();
+
+                      minDate.setFullYear(today.getFullYear() - 70);
+                      maxDate.setFullYear(today.getFullYear() - 18);
+
+                      if (selectedDate > maxDate) {
+                        setBirthdateError(
+                          "Employee must be at least 18 years old"
+                        );
+                        return;
+                      }
+                      if (selectedDate < minDate) {
+                        setBirthdateError(
+                          "Employee must be under 70 years old"
+                        );
+                        return;
+                      }
+                    }
+                  }}
+                  min={
+                    new Date(
+                      new Date().setFullYear(new Date().getFullYear() - 70)
+                    )
+                      .toISOString()
+                      .split("T")[0]
+                  }
+                  max={
+                    new Date(
+                      new Date().setFullYear(new Date().getFullYear() - 18)
+                    )
+                      .toISOString()
+                      .split("T")[0]
+                  }
+                  className={birthdateError ? "border-red-500" : ""}
+                  required
+                  onInvalid={(e) => e.preventDefault()}
+                />
+                {birthdateError && (
+                  <p className="text-xs text-red-600 mt-0.5">
+                    {birthdateError}
+                  </p>
+                )}
+              </div>
+              <div>
+                <Label htmlFor="editSex">Sex *</Label>
+                <Select
+                  value={formData.sex}
+                  onValueChange={(value) =>
+                    setFormData({ ...formData, sex: value })
+                  }
+                >
+                  <SelectTrigger className="cursor-pointer">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="M">Male</SelectItem>
+                    <SelectItem value="F">Female</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div>
+              <Label htmlFor="editAddress">Address *</Label>
+              <Input
+                id="editAddress"
+                placeholder="123 Main St, City, State ZIP"
+                value={formData.address}
+                onChange={(e) =>
+                  setFormData({ ...formData, address: e.target.value })
+                }
+                required
+              />
+            </div>
+            <div>
+              <Label htmlFor="editZone">Zone Assignment *</Label>
+              <Select
+                value={formData.zone}
+                onValueChange={(value) =>
+                  setFormData({ ...formData, zone: value })
+                }
+              >
+                <SelectTrigger className="cursor-pointer">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {["A", "B", "C", "D"].map((zone) => (
+                    <SelectItem key={zone} value={zone}>
+                      Zone {zone}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button
+              type="submit"
+              disabled={!hasChanges}
+              className="w-full bg-blue-600 hover:bg-blue-700 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Save className="h-4 w-4 mr-2" />
+              Save Changes
             </Button>
           </form>
         </ScrollArea>

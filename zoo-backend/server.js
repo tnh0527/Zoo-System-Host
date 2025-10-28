@@ -8,6 +8,7 @@ import { fileURLToPath } from "url";
 import { testConnection } from "./config/database.js";
 import adminRoutes from "./routes/adminRoutes.js";
 import customerRoutes from "./routes/customerRoutes.js";
+import authRoutes from "./routes/authRoutes.js";
 
 dotenv.config();
 
@@ -62,6 +63,7 @@ app.get("/health", (req, res) => {
 // Add all routes here
 app.use("/api/admin", adminRoutes);
 app.use("/api/customer", customerRoutes);
+app.use("/api/auth", authRoutes);
 
 // 404 handler
 app.use((req, res) => {

@@ -14,12 +14,14 @@ import { loginAccounts, customers, getEmployeeRole } from "../data/mockData";
 import { ArrowLeft } from "lucide-react";
 import { ZooLogo } from "../components/ZooLogo";
 import { toast } from "sonner";
+import { authAPI } from "../services/customerAPI";
 
 export function LoginPage({ onLogin, onBack }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loginType, setLoginType] = useState("customer"); // 'employee' or 'customer'
   const [showSignup, setShowSignup] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
 
   // Signup form state
   const [signupData, setSignupData] = useState({
@@ -35,67 +37,86 @@ export function LoginPage({ onLogin, onBack }) {
     onLogin(user, type);
   };
 
-  const handleFormLogin = (e) => {
+  const handleFormLogin = async (e) => {
     e.preventDefault();
+    setIsLoading(true);
 
-    if (loginType === "employee") {
-      // Only check employees (no supervisors)
-      const employee = loginAccounts.find((emp) => emp.Email === email);
-      if (employee) {
-        onLogin(employee, "employee");
+    try {
+      if (loginType === "employee") {
+        // Employee login uses business-specific accounts
+        const employee = loginAccounts.find((emp) => emp.Email === email);
+        if (employee) {
+          onLogin(employee, "employee");
+          toast.success("Logged in successfully!");
+        } else {
+          toast.error("Invalid email or password");
+        }
       } else {
-        alert("Employee not found. Please use one of the demo accounts.");
+        // Customer login tries backend first, then falls back to mock data
+        try {
+          const response = await authAPI.login(email, password);
+          onLogin(response.customer, "customer");
+          toast.success("Logged in successfully!");
+        } catch (error) {
+          // If backend fails, fall back to mock data
+          const customer = customers.find((cust) => cust.Email === email);
+          if (customer && customer.Customer_Password === password) {
+            onLogin(customer, "customer");
+            toast.success("Logged in successfully");
+          } else {
+            toast.error(error.message || "Invalid email or password");
+          }
+        }
       }
-    } else {
-      const customer = customers.find((cust) => cust.Email === email);
-      if (customer) {
-        onLogin(customer, "customer");
-      } else {
-        alert("Customer not found. Please use one of the demo accounts.");
-      }
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const handleSignup = (e) => {
+  const handleSignup = async (e) => {
     e.preventDefault();
 
     if (signupData.password !== signupData.confirmPassword) {
-      alert("Passwords do not match!");
+      toast.error("Passwords do not match!");
       return;
     }
 
     if (signupData.password.length < 6) {
-      alert("Password must be at least 6 characters long!");
+      toast.error("Password must be at least 6 characters long!");
       return;
     }
 
-    // Create new customer
-    const newCustomer = {
-      Customer_ID: Math.max(...customers.map((c) => c.Customer_ID)) + 1,
-      First_Name: signupData.firstName,
-      Last_Name: signupData.lastName,
-      Email: signupData.email,
-      Customer_Password: signupData.password,
-      Phone: signupData.phone,
-    };
+    setIsLoading(true);
 
-    // Add to customers array
-    customers.push(newCustomer);
+    try {
+      // Register with backend
+      const response = await authAPI.register({
+        firstName: signupData.firstName,
+        lastName: signupData.lastName,
+        email: signupData.email,
+        phone: signupData.phone,
+        password: signupData.password,
+      });
 
-    // Show success toast and switch to login
-    toast.success("Account created successfully! Please log in to continue.");
-    setShowSignup(false);
-    setEmail(signupData.email);
+      toast.success("Account created successfully! Please log in to continue.");
+      setShowSignup(false);
+      setEmail(signupData.email);
 
-    // Clear signup form
-    setSignupData({
-      firstName: "",
-      lastName: "",
-      email: "",
-      phone: "",
-      password: "",
-      confirmPassword: "",
-    });
+      // Clear signup form
+      setSignupData({
+        firstName: "",
+        lastName: "",
+        email: "",
+        phone: "",
+        password: "",
+        confirmPassword: "",
+      });
+    } catch (error) {
+      // Show error message if registration fails
+      toast.error(error.message || "Failed to create account");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -180,8 +201,9 @@ export function LoginPage({ onLogin, onBack }) {
                     <Button
                       type="submit"
                       className="w-full bg-green-600 hover:bg-green-700"
+                      disabled={isLoading}
                     >
-                      Sign In
+                      {isLoading ? "Signing In..." : "Sign In"}
                     </Button>
                   </form>
 
@@ -304,8 +326,9 @@ export function LoginPage({ onLogin, onBack }) {
                     <Button
                       type="submit"
                       className="w-full bg-teal-600 hover:bg-teal-700"
+                      disabled={isLoading}
                     >
-                      Create Account
+                      {isLoading ? "Creating Account..." : "Create Account"}
                     </Button>
                   </form>
 
