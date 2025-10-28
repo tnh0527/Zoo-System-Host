@@ -91,6 +91,10 @@ import {
   getDateRange,
 } from "../services/adminAPI";
 
+// API Base URL for direct fetch calls (for image uploads)
+const API_BASE_URL =
+  import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+
 export function AdminPortal({ user, onLogout, onNavigate }) {
   const {
     animals,
@@ -669,7 +673,7 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
         imageFormData.append("image", formData.imageFile);
 
         const imageResponse = await fetch(
-          `http://localhost:5000/api/admin/exhibits/${editingExhibit.Exhibit_ID}/upload-image`,
+          `${API_BASE_URL}/admin/exhibits/${editingExhibit.Exhibit_ID}/upload-image`,
           {
             method: "POST",
             body: imageFormData,
@@ -752,7 +756,7 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
         imageFormData.append("image", formData.imageFile);
 
         const imageResponse = await fetch(
-          `http://localhost:5000/api/admin/animals/${newAnimal.Animal_ID}/upload-image`,
+          `${API_BASE_URL}/admin/animals/${newAnimal.Animal_ID}/upload-image`,
           {
             method: "POST",
             body: imageFormData,
@@ -863,7 +867,7 @@ export function AdminPortal({ user, onLogout, onNavigate }) {
         imageFormData.append("image", formData.imageFile);
 
         const imageResponse = await fetch(
-          `http://localhost:5000/api/admin/animals/${editingAnimal.Animal_ID}/upload-image`,
+          `${API_BASE_URL}/admin/animals/${editingAnimal.Animal_ID}/upload-image`,
           {
             method: "POST",
             body: imageFormData,
@@ -2904,7 +2908,7 @@ function EditAnimalDialog({
     imageFile: null,
     removeImage: false, // Track if image should be removed
   });
-  const [imagePreview, setImagePreview] = useState(animal?.Image_URL || null);
+  const [imagePreview, setImagePreview] = useState(null);
   const [originalData, setOriginalData] = useState(null);
 
   // Check if any field has changed
@@ -2940,7 +2944,7 @@ function EditAnimalDialog({
       };
       setFormData(initialData);
       setOriginalData(initialData);
-      setImagePreview(animal.Image_URL || null);
+      setImagePreview(null);
     }
   }, [animal]);
 
@@ -2957,7 +2961,10 @@ function EditAnimalDialog({
     }
   };
 
-  const handleRemoveCurrentImage = () => {
+  const handleRemoveCurrentImage = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    // Mark image for removal - will be removed when user saves
     setFormData({ ...formData, removeImage: true, imageFile: null });
     setImagePreview(null);
   };
@@ -3079,7 +3086,7 @@ function EditAnimalDialog({
           {animal?.Image_URL && !imagePreview && !formData.removeImage && (
             <div>
               <Label>Current Image</Label>
-              <div className="relative inline-block mt-2">
+              <div className="flex items-center gap-3 mt-2">
                 <img
                   src={animal.Image_URL}
                   alt={animal.Animal_Name}
@@ -3087,31 +3094,15 @@ function EditAnimalDialog({
                 />
                 <Button
                   type="button"
-                  variant="outline"
+                  variant="destructive"
                   size="sm"
-                  className="absolute -top-2 -right-2 h-7 w-7 rounded-full p-0 bg-white hover:bg-red-50 border-2 border-red-500 text-red-600 hover:text-red-700 shadow-md"
+                  className="h-8 w-8 rounded-full p-0"
                   onClick={handleRemoveCurrentImage}
                   title="Remove image"
                 >
                   <X className="h-4 w-4" />
                 </Button>
               </div>
-            </div>
-          )}
-          {formData.removeImage && (
-            <div className="p-3 bg-orange-50 border border-orange-200 rounded-md">
-              <p className="text-sm text-orange-800">
-                ⚠️ Image will be removed when you save changes.{" "}
-                <button
-                  type="button"
-                  onClick={() =>
-                    setFormData({ ...formData, removeImage: false })
-                  }
-                  className="underline hover:no-underline font-medium"
-                >
-                  Undo
-                </button>
-              </p>
             </div>
           )}
           <div>
@@ -3133,7 +3124,7 @@ function EditAnimalDialog({
                 : ""}
             </p>
             {imagePreview && (
-              <div className="relative inline-block mt-2">
+              <div className="flex items-center gap-3 mt-2">
                 <img
                   src={imagePreview}
                   alt="Preview"
@@ -3143,8 +3134,10 @@ function EditAnimalDialog({
                   type="button"
                   variant="destructive"
                   size="sm"
-                  className="absolute -top-2 -right-2 h-6 w-6 rounded-full p-0"
-                  onClick={() => {
+                  className="h-8 w-8 rounded-full p-0"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
                     setImagePreview(null);
                     setFormData({ ...formData, imageFile: null });
                     // Clear the file input
@@ -3154,7 +3147,7 @@ function EditAnimalDialog({
                   }}
                   title="Remove image"
                 >
-                  <X className="h-3 w-3" />
+                  <X className="h-4 w-4" />
                 </Button>
               </div>
             )}
