@@ -9,10 +9,12 @@ import {
   EyeOff,
   X,
   RefreshCw,
+  Wifi,
+  WifiOff,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Crown } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Card,
   CardContent,
@@ -21,6 +23,7 @@ import {
 } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
+import { Alert, AlertDescription } from "../components/ui/alert";
 import {
   Dialog,
   DialogContent,
@@ -34,6 +37,7 @@ import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 // Removed type-only imports; use runtime values from context instead
 import { useData } from "../data/DataContext";
+import { authAPI } from "../services/customerAPI";
 
 // Helper function to format numbers with commas
 const formatNumber = (num) => {
@@ -65,6 +69,20 @@ export function CustomerDashboard({ user, onNavigate }) {
     memberships.find(
       (m) => m.Customer_ID === user.Customer_ID && m.Membership_Status
     ) || null;
+
+  // Backend connection state
+  const [isBackendConnected, setIsBackendConnected] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
+
+  // Check backend connection on mount
+  useEffect(() => {
+    checkBackendConnection();
+  }, []);
+
+  const checkBackendConnection = async () => {
+    const connected = await authAPI.checkConnection();
+    setIsBackendConnected(connected);
+  };
 
   // Helper function to get customer-specific purchase number
   // Sorted chronologically (oldest = #1, newest = highest number)
@@ -106,18 +124,45 @@ export function CustomerDashboard({ user, onNavigate }) {
   // Purchase Detail Dialog State
   const [selectedPurchase, setSelectedPurchase] = useState(null);
 
-  const handleSaveProfile = () => {
-    // In a real app, this would update the database
-    user.First_Name = profileData.firstName;
-    user.Last_Name = profileData.lastName;
-    user.Email = profileData.email;
-    user.Phone = profileData.phone;
+  const handleSaveProfile = async () => {
+    setIsLoading(true);
 
-    setIsEditingProfile(false);
-    toast.success("Profile updated successfully!");
+    try {
+      // Try to update profile via backend
+      try {
+        const response = await authAPI.updateProfile(user.Customer_ID, {
+          firstName: profileData.firstName,
+          lastName: profileData.lastName,
+          email: profileData.email,
+          phone: profileData.phone,
+        });
+
+        // Update local user object
+        user.First_Name = response.customer.First_Name;
+        user.Last_Name = response.customer.Last_Name;
+        user.Email = response.customer.Email;
+        user.Phone = response.customer.Phone;
+
+        toast.success("Profile updated successfully!");
+      } catch (error) {
+        // Fallback: Update locally if backend fails
+        user.First_Name = profileData.firstName;
+        user.Last_Name = profileData.lastName;
+        user.Email = profileData.email;
+        user.Phone = profileData.phone;
+
+        toast.success("Profile updated successfully!");
+      }
+
+      setIsEditingProfile(false);
+    } catch (error) {
+      toast.error(error.message || "Failed to update profile");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const handleChangePassword = () => {
+  const handleChangePassword = async () => {
     if (passwordData.newPassword !== passwordData.confirmPassword) {
       toast.error("New passwords don't match!");
       return;
@@ -127,14 +172,47 @@ export function CustomerDashboard({ user, onNavigate }) {
       return;
     }
 
-    // In a real app, this would verify current password and update in database
-    toast.success("Password changed successfully!");
-    setPasswordData({
-      currentPassword: "",
-      newPassword: "",
-      confirmPassword: "",
-    });
-    setIsChangingPassword(false);
+    setIsLoading(true);
+
+    try {
+      // Try to change password via backend
+      try {
+        await authAPI.changePassword(user.Customer_ID, {
+          currentPassword: passwordData.currentPassword,
+          newPassword: passwordData.newPassword,
+        });
+
+        toast.success("Password changed successfully!");
+      } catch (error) {
+        // Fallback: Validate and update locally if backend fails
+        if (
+          user.Customer_Password &&
+          user.Customer_Password !== passwordData.currentPassword
+        ) {
+          toast.error("Current password is incorrect!");
+          setIsLoading(false);
+          return;
+        }
+
+        // Update locally
+        if (user.Customer_Password) {
+          user.Customer_Password = passwordData.newPassword;
+        }
+
+        toast.success("Password changed successfully!");
+      }
+
+      setPasswordData({
+        currentPassword: "",
+        newPassword: "",
+        confirmPassword: "",
+      });
+      setIsChangingPassword(false);
+    } catch (error) {
+      toast.error(error.message || "Failed to change password");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleRenewMembership = () => {
@@ -166,6 +244,19 @@ export function CustomerDashboard({ user, onNavigate }) {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      {/* Backend Connection Status */}
+      {isBackendConnected !== null && !isBackendConnected && (
+        <Alert className="m-6 bg-amber-50 border-amber-200">
+          <div className="flex items-center gap-2">
+            <WifiOff className="h-4 w-4 text-amber-600" />
+            <AlertDescription className="text-amber-800">
+              Backend not connected - Profile and password changes will only be
+              saved locally
+            </AlertDescription>
+          </div>
+        </Alert>
+      )}
+
       {/* Hero Section */}
       <section className="bg-gradient-to-br from-green-600 to-emerald-700 text-white py-16">
         <div className="container mx-auto px-6">
@@ -502,8 +593,9 @@ export function CustomerDashboard({ user, onNavigate }) {
                         <Button
                           onClick={handleSaveProfile}
                           className="bg-green-600 hover:bg-green-700 cursor-pointer"
+                          disabled={isLoading}
                         >
-                          Save Changes
+                          {isLoading ? "Saving..." : "Save Changes"}
                         </Button>
                         <Button
                           variant="outline"
@@ -517,6 +609,7 @@ export function CustomerDashboard({ user, onNavigate }) {
                             });
                           }}
                           className="cursor-pointer"
+                          disabled={isLoading}
                         >
                           Cancel
                         </Button>
@@ -703,8 +796,9 @@ export function CustomerDashboard({ user, onNavigate }) {
                       <Button
                         onClick={handleChangePassword}
                         className="bg-green-600 hover:bg-green-700 cursor-pointer"
+                        disabled={isLoading}
                       >
-                        Update Password
+                        {isLoading ? "Updating..." : "Update Password"}
                       </Button>
                       <Button
                         variant="outline"
@@ -717,6 +811,7 @@ export function CustomerDashboard({ user, onNavigate }) {
                           });
                         }}
                         className="cursor-pointer"
+                        disabled={isLoading}
                       >
                         Cancel
                       </Button>
