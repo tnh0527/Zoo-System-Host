@@ -30,7 +30,7 @@ app.use(
     origin: function (origin, callback) {
       console.log("CORS check - Origin:", origin);
       console.log("CORS check - Allowed CLIENT_URL:", process.env.CLIENT_URL);
-      
+
       // Allow all localhost ports in development
       if (!origin || /^http:\/\/localhost:\d+$/.test(origin)) {
         return callback(null, true);
